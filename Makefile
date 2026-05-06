@@ -1,17 +1,12 @@
-export THEOS_PACKAGE_SCHEME=rootless
-export TARGET=iphone:clang:latest:14.0
-export ARCHS=arm64
-
-include $(THEOS)/makefiles/common.mk
-
-TWEAK_NAME = VirtualCamPro
-
-VirtualCamPro_FILES = Tweak.x
-VirtualCamPro_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
-VirtualCamPro_FRAMEWORKS = UIKit AVFoundation CoreMedia CoreVideo QuartzCore CoreGraphics CoreImage Foundation
-VirtualCamPro_LDFLAGS += -undefined dynamic_lookup
-
-SUBPROJECTS += prefs
-
-include $(THEOS_MAKE_PATH)/tweak.mk
-include $(THEOS_MAKE_PATH)/aggregate.mk
+ZXhwb3J0IFRIRU9TX1BBQ0tBR0VfU0NIRU1FPXJvb3RsZXNzCmV4cG9ydCBU
+QVJHRVQ9aXBob25lOmNsYW5nOmxhdGVzdDoxNC4wCmV4cG9ydCBBUkNIUz1h
+cm02NAoKaW5jbHVkZSAkKFRIRU9TKS9tYWtlZmlsZXMvY29tbW9uLm1rCgpU
+V0VBS19OQU1FID0gVmlydHVhbENhbVBybwoKVmlydHVhbENhbVByb19GSUxF
+UyA9IFR3ZWFrLngKVmlydHVhbENhbVByb19DRkxBR1MgPSAtZm9iamMtYXJj
+IC1Xbm8tZGVwcmVjYXRlZC1kZWNsYXJhdGlvbnMKVmlydHVhbENhbVByb19G
+UkFNRVdPUktTID0gVUlLaXQgQVZGb3VuZGF0aW9uIENvcmVNZWRpYSBDb3Jl
+VmlkZW8gUXVhcnR6Q29yZSBDb3JlR3JhcGhpY3MgQ29yZUltYWdlIEZvdW5k
+YXRpb24KVmlydHVhbENhbVByb19MREZMQUdTICs9IC11bmRlZmluZWQgZHlu
+YW1pY19sb29rdXAKClNVQlBST0pFQ1RTICs9IHByZWZzCgppbmNsdWRlICQo
+VEhFT1NfTUFLRV9QQVRIKS90d2Vhay5tawppbmNsdWRlICQoVEhFT1NfTUFL
+RV9QQVRIKS9hZ2dyZWdhdGUubWsK
