@@ -1,4 +1,4 @@
-// VCAM V76.0: HTTP Low-Latency Engine
+// VCAM V77.0: Ultimate KYC Stealth & Network Auto-Fix
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
@@ -24,12 +24,16 @@ static NSString *getPrefsPath() {
     return rootful;
 }
 
-static void loadPrefs() {
-    NSDictionary *prefs = [[NSDictionary alloc] initWithContentsOfFile:getPrefsPath()];
-    if (prefs) {
-        enabled = prefs[@"enabled"] ? [prefs[@"enabled"] boolValue] : YES;
-        rtspURL = prefs[@"rtspURL"] ?: @"http://192.168.1.44:8888/live";
-        addNoise = prefs[@"addNoise"] ? [prefs[@"addNoise"] boolValue] : YES;
+static void writeLog(NSString *msg) {
+    NSString *path = @"/var/mobile/Documents/vcam_ERROR.txt";
+    NSString *content = [NSString stringWithFormat:@"[%@] %@\n", [NSDate date], msg];
+    NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
+    if (handle) {
+        [handle seekToEndOfFile];
+        [handle writeData:[content dataUsingEncoding:NSUTF8StringEncoding]];
+        [handle closeFile];
+    } else {
+        [content writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
     }
 }
 
@@ -53,12 +57,23 @@ static void applyStealthNoise(CVPixelBufferRef buffer) {
     CVPixelBufferUnlockBaseAddress(buffer, 0);
 }
 
+static void loadPrefs() {
+    NSDictionary *prefs = [[NSDictionary alloc] initWithContentsOfFile:getPrefsPath()];
+    if (prefs) {
+        enabled = prefs[@"enabled"] ? [prefs[@"enabled"] boolValue] : YES;
+        rtspURL = prefs[@"rtspURL"] ?: @"http://192.168.1.44:8888/live";
+        addNoise = prefs[@"addNoise"] ? [prefs[@"addNoise"] boolValue] : YES;
+    }
+}
+
 static void startStreaming() {
     loadPrefs();
     if (!enabled) return;
 
     NSURL *url = [NSURL URLWithString:rtspURL];
     if (!url) return;
+
+    writeLog([NSString stringWithFormat:@"ATTEMPT: Connecting to %@", rtspURL]);
 
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
     AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
@@ -79,6 +94,11 @@ static void startStreaming() {
     if (enabled) {
         if (!player) startStreaming();
         
+        if (player.status == AVPlayerStatusFailed) {
+            if (debugLabel) [debugLabel setText:@"VCAM: NETWORK ERROR"];
+            player = nil;
+        }
+
         if (player.status == AVPlayerStatusReadyToPlay) {
             CMTime itemTime = [videoOutput itemTimeForHostTime:CACurrentMediaTime()];
             if ([videoOutput hasNewPixelBufferForItemTime:itemTime]) {
