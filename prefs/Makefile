@@ -1,11 +1,8 @@
-include $(THEOS)/makefiles/common.mk
-
-BUNDLE_NAME = VirtualCamPro
-
-VirtualCamPro_FILES = VCPRootListController.m
-VirtualCamPro_FRAMEWORKS = UIKit Foundation
-VirtualCamPro_INSTALL_PATH = /Library/PreferenceBundles
-VirtualCamPro_CFLAGS = -fobjc-arc
-VirtualCamPro_LDFLAGS += -undefined dynamic_lookup
-
-include $(THEOS_MAKE_PATH)/bundle.mk
+aW5jbHVkZSAkKFRIRU9TKS9tYWtlZmlsZXMvY29tbW9uLm1rCgpCVU5ETEVf
+TkFNRSA9IFZpcnR1YWxDYW1Qcm8KClZpcnR1YWxDYW1Qcm9fRklMRVMgPSBW
+Q1BSb290TGlzdENvbnRyb2xsZXIubQpWaXJ0dWFsQ2FtUHJvX0ZSQU1FV09S
+S1MgPSBVSUtpdCBGb3VuZGF0aW9uClZpcnR1YWxDYW1Qcm9fSU5TVEFMTF9Q
+QVRIID0gL0xpYnJhcnkvUHJlZmVyZW5jZUJ1bmRsZXMKVmlydHVhbENhbVBy
+b19DRkxBR1MgPSAtZm9iamMtYXJjClZpcnR1YWxDYW1Qcm9fTERGTEFHUyAr
+PSAtdW5kZWZpbmVkIGR5bmFtaWNfbG9va3VwCgppbmNsdWRlICQoVEhFT1Nf
+TUFLRV9QQVRIKS9idW5kbGUubWsK
