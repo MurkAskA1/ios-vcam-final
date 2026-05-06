@@ -1,1 +1,27 @@
-bmFtZTogVkNBTSBNaWdyYXRpb24gQnVpbGQKb246CiAgcHVzaDoKICAgIGJyYW5jaGVzOgogICAgICAtIG1haW4KICB3b3JrZmxvd19kaXNwYXRjaDoKCmpvYnM6CiAgYnVpbGQ6CiAgICBydW5zLW9uOiBtYWNvcy0xNAogICAgc3RlcHM6CiAgICAgIC0gdXNlczogYWN0aW9ucy9jaGVja291dEB2NAogICAgICAtIG5hbWU6IFNldHVwIFRoZW9zCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBnaXQgY2xvbmUgLS1yZWN1cnNpdmUgaHR0cHM6Ly9naXRodWIuY29tL3RoZW9zL3RoZW9zLmdpdCB+L3RoZW9zCiAgICAgICAgICBlY2hvICJUSEVPUz1+L3RoZW9zIiA+PiAkR0lUSFVCX0VOVgogICAgICAtIG5hbWU6 IEluc3RhbGwgU0RLCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBjdXJsIC1MTyBodHRwczovL2dpdGh1Yi5jb20vdGhlb3Mvc2Rrcy9hcmNoaXZlL21hc3Rlci56aXAKICAgICAgICAgIHVuemlwIG1hc3Rlci56aXAKICAgICAgICAgIG12IHNka3MtbWFzdGVyLyouc2RrIH4vdGhlb3Mvc2Rrcy8KICAgICAgICAgIHJtIC1yZiBtYXN0ZXIuemlwIHNka3MtbWFzdGVyCiAgICAgICAtIG5hbWU6IEJ1aWxkCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBleHBvcnQgVEhFT1M9fi90aGVvcwogICAgICAgICAgbWFrZSBwYWNrYWdlIEZJTkFMUEFDS0FHRT0xCiAgICAgICAtIG5hbWU6IFVwbG9hZAogICAgICAgIHVzZXM6IGFjdGlvbnMvdXBsb2FkLWFydGlmYWN0QHY0CiAgICAgICAgd2l0aDoKICAgICAgICAgIG5hbWU6IFZpcnR1YWxDYW1Qcm9fZGViCiAgICAgICAgICBwYXRoOiBwYWNrYWdlcy8qLmRlYgo=
+name: VCAM Build
+on: [push, workflow_dispatch]
+
+jobs: 
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git ~/theos
+          echo "THEOS=~/theos" >> $GITHUB_ENV
+      - name: Install SDK
+        run: |
+          curl -LO https://github.com/theos/sdks/archive/master.zip
+          unzip master.zip
+          mv sdks-master/*.sdk ~/theos/sdks/
+          rm -rf master.zip sdks-master
+      - name: Build
+        run: |
+          export THEOS=~/theos
+          make package FINALPACKAGE=1
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: VirtualCamPro_deb
+          path: packages/*.deb
