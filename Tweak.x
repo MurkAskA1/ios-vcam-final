@@ -1,4 +1,4 @@
-// VCAM V79.0.6: HLS Native Support (Raw Text Fix)
+// VCAM V79.0.7: HLS Native Support (Raw Text Fix)
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
@@ -26,7 +26,7 @@ static NSString *getPrefsPath() {
 static void loadPrefs() {
     NSDictionary *prefs = [[NSDictionary alloc] initWithContentsOfFile:getPrefsPath()];
     if (prefs) {
-        enabled = prefs[@"enabled"] ? [prefs[@"enabled"] boolValue] : YES;
+        enabled = prefs[@"enabled"] ? [prefs[@"enabled" ] boolValue] : YES;
         rtspURL = prefs[@"rtspURL"] ?: @"http://192.168.1.44:8889/live/stream/index.m3u8";
         addNoise = prefs[@"addNoise"] ? [prefs[@"addNoise"] boolValue] : YES;
     }
@@ -62,9 +62,6 @@ static void startStreaming() {
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
     AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
     
-    if ([item respondsToSelector:@selector(setConfiguresCustomAvoidanceOfLoadingDelays:)]) {
-        [item setConfiguresCustomAvoidanceOfLoadingDelays:YES];
-    }
     item.preferredForwardBufferDuration = 0.5;
 
     NSDictionary *pixBuffAttributes = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
@@ -73,9 +70,6 @@ static void startStreaming() {
     
     player = [AVPlayer playerWithPlayerItem:item];
     player.actionAtItemEnd = AVPlayerActionAtItemEndNone;
-    if ([player respondsToSelector:@selector(setAutomaticallyWaitsToMinimizeStalling:)]) {
-        [player setAutomaticallyWaitsToMinimizeStalling:NO];
-    }
     [player play];
 }
 
