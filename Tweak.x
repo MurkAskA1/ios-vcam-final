@@ -1,4 +1,4 @@
-// VCAM V74.0: Dynamic RTSP Eye
+// VCAM V75.0: Enhanced Connection Watcher
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
@@ -24,9 +24,9 @@ static NSString *getPrefsPath() {
     return rootful;
 }
 
-static void writeError(NSString *msg, id details) {
+static void writeLog(NSString *msg) {
     NSString *path = @"/var/mobile/Documents/vcam_ERROR.txt";
-    NSString *content = [NSString stringWithFormat:@"[%@] %@ details: %@\n", [NSDate date], msg, details];
+    NSString *content = [NSString stringWithFormat:@"[%@] %@\n", [NSDate date], msg];
     NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
     if (handle) {
         [handle seekToEndOfFile];
@@ -72,11 +72,11 @@ static void startStreaming() {
 
     NSURL *url = [NSURL URLWithString:rtspURL];
     if (!url) {
-        writeError(@"Invalid URL", rtspURL);
+        writeLog([NSString stringWithFormat:@"ERR: Invalid URL: %@", rtspURL]);
         return;
     }
 
-    writeError(@"Connecting to", rtspURL);
+    writeLog([NSString stringWithFormat:@"START: Connecting to %@", rtspURL]);
 
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
     AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
@@ -87,9 +87,10 @@ static void startStreaming() {
     
     player = [AVPlayer playerWithPlayerItem:item];
     player.actionAtItemEnd = AVPlayerActionAtItemEndNone;
-    if ([player respondsToSelector:@selector(setAutomaticallyWaitsToMinimizeStalling:)]) {
-        [player setAutomaticallyWaitsToMinimizeStalling:NO];
-    }
+    
+    [player addObserver:[[NSObject alloc] init] forKeyPath:@"status" options:0 context:NULL];
+    
+    writeLog(@"INFO: Player initialized and play() called");
     [player play];
 }
 
@@ -99,20 +100,28 @@ static void startStreaming() {
         
         if (player.status == AVPlayerStatusFailed) {
             if (debugLabel) [debugLabel setText:@"VCAM: PLAYER ERROR"];
-            writeError(@"Player failed", player.error.localizedDescription);
+            static BOOL logged = NO;
+            if (!logged) {
+                writeLog([NSString stringWithFormat:@"ERR: Player failed: %@", player.error.localizedDescription]);
+                logged = YES;
+            }
             player = nil;
+            return %orig(sbuf);
         }
 
-        CMTime itemTime = [videoOutput itemTimeForHostTime:CACurrentMediaTime()];
-        if ([videoOutput hasNewPixelBufferForItemTime:itemTime]) {
-            CVPixelBufferRef newBuffer = [videoOutput copyPixelBufferForItemTime:itemTime itemTimeForDisplay:NULL];
-            if (newBuffer) {
-                if (vBuffer) CFRelease(vBuffer);
-                vBuffer = newBuffer;
-                if (addNoise) applyStealthNoise(vBuffer);
-                if (debugLabel) [debugLabel setText:@"VCAM: STREAMING"];
+        if (player.status == AVPlayerStatusReadyToPlay) {
+            CMTime itemTime = [videoOutput itemTimeForHostTime:CACurrentMediaTime()];
+            if ([videoOutput hasNewPixelBufferForItemTime:itemTime]) {
+                CVPixelBufferRef newBuffer = [videoOutput copyPixelBufferForItemTime:itemTime itemTimeForDisplay:NULL];
+                if (newBuffer) {
+                    if (vBuffer) CFRelease(vBuffer);
+                    vBuffer = newBuffer;
+                    if (addNoise) applyStealthNoise(vBuffer);
+                    if (debugLabel) [debugLabel setText:@"VCAM: STREAMING"];
+                }
             }
         }
+        
         if (vBuffer) return vBuffer;
     }
     return %orig(sbuf);
@@ -137,7 +146,7 @@ static void startStreaming() {
         }
 
         for (CALayer *sub in self.sublayers) {
-            if (sub != debugLabel.layer) sub.hidden = YES;
+            if (sub != debugLabel.layer) sub.hidden = (vBuffer != NULL);
         }
     }
 }
