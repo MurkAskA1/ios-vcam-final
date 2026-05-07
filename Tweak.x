@@ -1,9 +1,9 @@
-// VCAM V86.0: Visual Debugging (Blue Layer Test)
+// VCAM V87.0: Error Hunting & Detailed Logging (Blue Layer Test)
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 
 static BOOL enabled = YES;
-static NSString *rtspURL = @"http://192.168.1.44:8889/live/stream/index.m3u8";
+static NSString *rtspURL = @"http://192.168.1.44:8888/live/stream/index.m3u8";
 static UILabel *statusLabel = nil;
 static UIWindow *overlayWindow = nil;
 static AVPlayer *vcamPlayer = nil;
@@ -66,15 +66,46 @@ void setup_status_bar() {
             // DEBUG: Blue background visible if no video is rendered
             vcamLayer.backgroundColor = [UIColor blueColor].CGColor;
             vcamPlayer.actionAtItemEnd = AVPlayerActionAtItemEndNone;
+
+            // V87.0: Add error observer on the player item for detailed error logging
+            if (vcamPlayer.currentItem) {
+                [vcamPlayer.currentItem addObserver:vcamPlayer
+                                         forKeyPath:@"status"
+                                            options:NSKeyValueObservingOptionNew
+                                            context:nil];
+                vcam_log(@"V87.0: Added KVO observer on currentItem.status");
+            }
+
+            // V87.0: Log player and item errors at creation time
+            if (vcamPlayer.error) {
+                vcam_log([NSString stringWithFormat:@"V87.0: Player error at init: %@", [vcamPlayer.error localizedDescription]]);
+            }
+            if (vcamPlayer.currentItem.error) {
+                vcam_log([NSString stringWithFormat:@"V87.0: Item error at init: %@", [vcamPlayer.currentItem.error localizedDescription]]);
+            }
+
             [vcamPlayer play];
 
             // 5-second timeout: check whether the player has loaded anything
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 if (vcamPlayer.currentItem == nil || vcamPlayer.currentItem.status == AVPlayerItemStatusFailed) {
-                    vcam_log(@"TIMEOUT: Player failed to load after 5 seconds");
-                    update_vcam_status(@"LOAD TIMEOUT", [UIColor redColor]);
+                    // V87.0: Capture detailed error messages from player and item
+                    NSString *playerError = [vcamPlayer.error localizedDescription] ?: @"(no player error)";
+                    NSString *itemError = [vcamPlayer.currentItem.error localizedDescription] ?: @"(no item error)";
+                    vcam_log([NSString stringWithFormat:@"TIMEOUT: Player failed after 5s. Player error: %@ | Item error: %@", playerError, itemError]);
+
+                    // V87.0: Show truncated error in status label instead of generic 'LOAD TIMEOUT'
+                    NSString *errorDetail = [vcamPlayer.currentItem.error localizedDescription] ?: [vcamPlayer.error localizedDescription] ?: @"unknown";
+                    NSString *truncatedError = errorDetail;
+                    if (truncatedError.length > 40) {
+                        truncatedError = [[truncatedError substringToIndex:40] stringByAppendingString:@"..."];
+                    }
+                    update_vcam_status([NSString stringWithFormat:@"TIMEOUT: %@", truncatedError], [UIColor redColor]);
                 } else if (vcamPlayer.status != AVPlayerStatusReadyToPlay) {
-                    vcam_log(@"TIMEOUT: Player not ready after 5 seconds");
+                    // V87.0: Also log errors in the not-ready branch
+                    NSString *playerError = [vcamPlayer.error localizedDescription] ?: @"(none)";
+                    NSString *itemError = [vcamPlayer.currentItem.error localizedDescription] ?: @"(none)";
+                    vcam_log([NSString stringWithFormat:@"TIMEOUT: Player not ready after 5s. Status: %ld | Player error: %@ | Item error: %@", (long)vcamPlayer.status, playerError, itemError]);
                     update_vcam_status(@"NOT READY", [UIColor orangeColor]);
                 } else {
                     vcam_log(@"Timeout check passed - player ready");
@@ -118,5 +149,5 @@ static void loadPrefs() {
 
 %ctor {
     loadPrefs();
-    vcam_log(@"Tweak Loaded - Version 86.0");
+    vcam_log(@"Tweak Loaded - Version 87.0");
 }
