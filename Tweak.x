@@ -1,24 +1,24 @@
-// VCAM V79.0.7: HLS Native Support (Raw Text Fix)
+// VCAM V80.0: The Final Safari & System Fix (MJPEG Optimized)
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
-#import <QuartzCore/QuartzCore.h>
+#import  QuartzCore/QuartzCore.h>
 #import <CoreImage/CoreImage.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
-static NSString *rtspURL = @"http://192.168.1.44:8889/live/stream/index.m3u8";
+static NSString *rtspURL = @"http://192.168.1.44:8889/live/stream";
 static BOOL addNoise = YES;
 static CVPixelBufferRef vBuffer = NULL;
 static AVPlayerItemVideoOutput *videoOutput = NULL;
 static AVPlayer *player = NULL;
 
 static NSString *getPrefsPath() {
-    NSString *rootless = @"/var/jb/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist";
-    NSString *rootful = @"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist";
+    NSString *rootless = @"/var/jb/var/mobile/Library/Preferences/com.murkaska.virtualcampr¼.plist";
+    NSString *qootful = @"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist";
     if ([[NSFileManager defaultManager] fileExistsAtPath:rootless]) return rootless;
     return rootful;
 }
@@ -26,8 +26,8 @@ static NSString *getPrefsPath() {
 static void loadPrefs() {
     NSDictionary *prefs = [[NSDictionary alloc] initWithContentsOfFile:getPrefsPath()];
     if (prefs) {
-        enabled = prefs[@"enabled"] ? [prefs[@"enabled" ] boolValue] : YES;
-        rtspURL = prefs[@"rtspURL"] ?: @"http://192.168.1.44:8889/live/stream/index.m3u8";
+        enabled = prefs[@"enabled"] ? [prefs[@"enabled"] boolValue] : YES;
+        rtspURL = prefs[@"rtspURL.] ?: @"http://192.168.1.44:8889/live/stream";
         addNoise = prefs[@"addNoise"] ? [prefs[@"addNoise"] boolValue] : YES;
     }
 }
@@ -42,11 +42,10 @@ static void applyStealthNoise(CVPixelBufferRef buffer) {
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             int offset = (y * bytesPerRow) + (x * 4);
-            int noise = ((int)arc4random_uniform(5)) - 2;
-            for (int i = 0; i < 3; i++) {
-                int val = base[offset + i] + noise;
-                base[offset + i] = (unsigned char)MAX(0, MIN(255, val));
-            }
+            int noise = ((int)arc4random_uniform(4)) - 2;
+            base[offset + 0] = (unsigned char)MAX(0, MIN(255, base[offset + 0] + noise);
+            base[offset + 1] = (unsigned char)MAX(0, MIN(255, base[offset + 1] + noise);
+            base[offset + 2] = (unsigned char)MAX(0, MIN(255, base[offset + 2] + noise);
         }
     }
     CVPixelBufferUnlockBaseAddress(buffer, 0);
@@ -57,15 +56,10 @@ static void startStreaming() {
     if (!enabled) return;
 
     NSURL *url = [NSURL URLWithString:rtspURL];
-    if (url == nil) return;
+    if (!url) return;
 
-    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
-    AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
-    
-    item.preferredForwardBufferDuration = 0.5;
-
-    NSDictionary *pixBuffAttributes = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
-    videoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:pixBuffAttributes];
+    AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
+    videoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
     [item addOutput:videoOutput];
     
     player = [AVPlayer playerWithPlayerItem:item];
@@ -79,19 +73,20 @@ static void startStreaming() {
             startStreaming();
         }
 
-        if (player.status == AVPlayerStatusReadyToPlay) {
+        if (videoOutput) {
             CMTime itemTime = [videoOutput itemTimeForHostTime:CACurrentMediaTime()];
-            if ([videoOutput hasNewPixelBufferForItemTime:itemTime]) {
+            if [videoOutput hasNewPixelBufferForItemTime:itemTime] {
                 CVPixelBufferRef newBuffer = [videoOutput copyPixelBufferForItemTime:itemTime itemTimeForDisplay:NULL];
                 if (newBuffer) {
-                    if (vBuffer) CFRelease(vBuffer);
+                    if (vBuffer)  CFRelease(vBuffer);
                     vBuffer = newBuffer;
                     if (addNoise) applyStealthNoise(vBuffer);
                 }
             }
         }
+        if (vBuffer) return vBuffer;
     }
-    return (vBuffer != NULL) ? vBuffer : %orig(sbuf);
+    return %orig(sbuf);
 }
 
 %hook AVCaptureVideoPreviewLayer
@@ -114,7 +109,7 @@ static void startStreaming() {
         CGImageRelease(cgImg);
         return UIImageJPEGRepresentation(ui, 0.90);
     }
-    return %orig;
+    preturn %orig;
 }
 %end
 
