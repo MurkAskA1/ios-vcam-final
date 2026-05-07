@@ -1,4 +1,4 @@
-// VCAM V85.0: The Invisible Injection Engine
+// VCAM V86.0: Visual Debugging (Blue Layer Test)
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 
@@ -33,16 +33,15 @@ void update_vcam_status(NSString *status, UIColor *color) {
     vcam_log(status);
 }
 
-// SETUP STATUS BAR ONLY (No black screen)
 void setup_status_bar() {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!overlayWindow) {
             overlayWindow = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, [UIScreen mainScreen].bounds.size.width, 100)];
-            overlayWindow.windowLevel = UIWindowLevelAlert + 1;
+            overlayWindow.windowLevel = UIWindowLevelAlert + 2;
             overlayWindow.userInteractionEnabled = NO;
             overlayWindow.backgroundColor = [UIColor clearColor];
             overlayWindow.hidden = NO;
-            
+
             statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 40, 300, 25)];
             statusLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.5];
             statusLabel.textColor = [UIColor whiteColor];
@@ -57,19 +56,46 @@ void setup_status_bar() {
 }
 
 %hook AVCaptureVideoPreviewLayer
-- (void)setSession:(AVCaptureSession *)session {
+- (void)layoutSublayers {
     %orig;
     if (enabled) {
         if (!vcamPlayer) {
             vcamPlayer = [AVPlayer playerWithURL:[NSURL URLWithString:rtspURL]];
             vcamLayer = [AVPlayerLayer playerLayerWithPlayer:vcamPlayer];
             vcamLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+            // DEBUG: Blue background visible if no video is rendered
+            vcamLayer.backgroundColor = [UIColor blueColor].CGColor;
             vcamPlayer.actionAtItemEnd = AVPlayerActionAtItemEndNone;
+            [vcamPlayer play];
+
+            // 5-second timeout: check whether the player has loaded anything
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (vcamPlayer.currentItem == nil || vcamPlayer.currentItem.status == AVPlayerItemStatusFailed) {
+                    vcam_log(@"TIMEOUT: Player failed to load after 5 seconds");
+                    update_vcam_status(@"LOAD TIMEOUT", [UIColor redColor]);
+                } else if (vcamPlayer.status != AVPlayerStatusReadyToPlay) {
+                    vcam_log(@"TIMEOUT: Player not ready after 5 seconds");
+                    update_vcam_status(@"NOT READY", [UIColor orangeColor]);
+                } else {
+                    vcam_log(@"Timeout check passed - player ready");
+                }
+            });
         }
+
+        // Always re-attach the layer if it was removed
+        if (vcamLayer.superlayer != self) {
+            [self addSublayer:vcamLayer];
+        }
+
+        // Always match the preview layer's size and stay on top
         vcamLayer.frame = self.bounds;
-        [self addSublayer:vcamLayer];
-        [vcamPlayer play];
-        update_vcam_status(@"STREAMING ACTIVE", [UIColor greenColor]);
+        vcamLayer.zPosition = 999;
+
+        if (vcamPlayer.status == AVPlayerStatusReadyToPlay) {
+            update_vcam_status(@"STREAMING ACTIVE", [UIColor greenColor]);
+        } else {
+            update_vcam_status(@"CONNECTING...", [UIColor yellowColor]);
+        }
     }
 }
 %end
@@ -79,7 +105,6 @@ void setup_status_bar() {
     %orig;
     vcam_log(@"Capture Session Started");
     setup_status_bar();
-    update_vcam_status(@"CONNECTING...", [UIColor yellowColor]);
 }
 %end
 
@@ -93,5 +118,5 @@ static void loadPrefs() {
 
 %ctor {
     loadPrefs();
-    vcam_log(@"Tweak Loaded - Version 85.0");
+    vcam_log(@"Tweak Loaded - Version 86.0");
 }
