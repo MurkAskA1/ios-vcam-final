@@ -10,4 +10,7 @@ VirtualCamPro_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 VirtualCamPro_FRAMEWORKS = UIKit AVFoundation CoreMedia CoreVideo QuartzCore CoreGraphics CoreImage Foundation
 VirtualCamPro_LDFLAGS += -undefined dynamic_lookup
 
+SUBPROJECTS += prefs
+
 include $(THEOS_MAKE_PATH)/tweak.mk
+include $(THEOS_MAKE_PATH)/aggregate.mk
