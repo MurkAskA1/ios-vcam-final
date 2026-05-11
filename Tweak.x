@@ -1,59 +1,65 @@
-// VCAM V125.0: The Final Proof - Stable Mirror & Touch Passthrough
+// VCAM V127.0: The Final KYC Master - MJPEG Passthrough Engine
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
-static NSString *rtspURL = @"http://192.168.1.44:8889/live/stream/index.m3u8";
-static UIWindow *proofWindow = nil;
-static AVPlayer *proofPlayer = nil;
-static AVPlayerLayer *proofLayer = nil;
-static UILabel *proofHUD = nil;
-
-void proof_log(NSString *msg) {
-    NSString *path = @"/var/mobile/Documents/vcam_PROOF.log";
-    NSString *formatted = [NSString stringWithFormat:@"[V125] %@\n", msg];
-    NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
-    if (handle) { [handle seekToEndOfFile]; [handle writeData:[formatted dataUsingEncoding:NSUTF8StringEncoding]]; [handle closeFile]; }
-    else { [formatted writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil]; }
-}
+static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
+static UIWindow *vcamWindow = nil;
+static UIImageView *vcamDisplay = nil;
+static UIImage *lastValidFrame = nil;
+static NSMutableData *mBuffer = nil;
 
 @interface VCamPassthroughWindow : UIWindow @end
 @implementation VCamPassthroughWindow
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hitView = [super hitTest:point withEvent:event];
-    // Return nil if the hit view is our window or root view, so touches pass to camera app
-    if (hitView == self || hitView == self.rootViewController.view) return nil;
+    if (hitView == self || hitView == self.rootViewController.view || hitView == vcamDisplay) return nil;
     return hitView;
 }
 @end
 
-static void setup_proof_engine(void) {
-    if (proofWindow) return;
+@interface VCamFetcher : NSObject <NSURLSessionDataDelegate> + (instancetype)shared; - (void)start; @end
+@implementation VCamFetcher
++ (instancetype)shared { static VCamFetcher *s = nil; static dispatch_once_t o; dispatch_once(&o, ^{ s = [[self alloc] init]; }); return s; }
+- (void)start {
+    mBuffer = [NSMutableData data];
+    NSURLSession *s = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration ephemeralSessionConfiguration] delegate:self delegateQueue:[NSOperationQueue mainQueue]];
+    [[s dataTaskWithURL:[NSURL URLWithString:streamURL]] resume];
+}
+- (void)URLSession:(NSURLSession *)s dataTask:(NSURLSessionDataTask *)t didReceiveData:(NSData *)d {
+    [mBuffer appendData:d];
+    const unsigned char *b = (const unsigned char *)mBuffer.bytes; NSInteger len = mBuffer.length;
+    for (NSInteger i = 0; i < len - 1; i++) {
+        if (b[i] == 0xFF && b[i+1] == 0xD8) {
+            for (NSInteger j = i + 1; j < len - 1; j++) {
+                if (b[j] == 0xFF && b[j+1] == 0xD9) {
+                    UIImage *img = [UIImage imageWithData:[mBuffer subdataWithRange:NSMakeRange(i, j - i + 2)]];
+                    if (img) { lastValidFrame = img; if (vcamDisplay) vcamDisplay.image = img; }
+                    [mBuffer replaceBytesInRange:NSMakeRange(0, j + 2) withBytes:NULL length:0]; return;
+                }
+            }
+        }
+    }
+}
+@end
+
+static void setup_vcam_master(void) {
+    if (vcamWindow) return;
     dispatch_async(dispatch_get_main_queue(), ^{
-        proofWindow = [[VCamPassthroughWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-        proofWindow.windowLevel = UIWindowLevelAlert + 5000;
-        proofWindow.userInteractionEnabled = YES;
-        proofWindow.backgroundColor = [UIColor clearColor];
-        proofWindow.hidden = NO;
+        vcamWindow = [[VCamPassthroughWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        vcamWindow.windowLevel = UIWindowLevelAlert + 5000;
+        vcamWindow.backgroundColor = [UIColor clearColor];
+        vcamWindow.userInteractionEnabled = YES;
+        vcamWindow.rootViewController = [[UIViewController alloc] init];
+        vcamWindow.hidden = NO;
         
-        proofPlayer = [AVPlayer playerWithURL:[NSURL URLWithString:rtspURL]];
-        proofLayer = [AVPlayerLayer playerLayerWithPlayer:proofPlayer];
-        proofLayer.frame = proofWindow.bounds;
-        proofLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-        proofLayer.backgroundColor = [UIColor blueColor].CGColor;
-        [proofWindow.layer addSublayer:proofLayer];
+        vcamDisplay = [[UIImageView alloc] initWithFrame:vcamWindow.bounds];
+        vcamDisplay.contentMode = UIViewContentModeScaleAspectFill;
+        vcamDisplay.userInteractionEnabled = NO;
+        [vcamWindow.rootViewController.view addSubview:vcamDisplay];
         
-        proofHUD = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, [UIScreen mainScreen].bounds.size.width, 25)];
-        proofHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
-        proofHUD.textColor = [UIColor greenColor];
-        proofHUD.font = [UIFont boldSystemFontOfSize:10];
-        proofHUD.textAlignment = NSTextAlignmentCenter;
-        proofHUD.text = @"[V125.0 ACTIVE]";
-        [proofWindow addSubview:proofHUD];
-        
-        [proofPlayer play];
-        proof_log(@"Engine Started");
+        [[VCamFetcher shared] start];
     });
 }
 
@@ -61,31 +67,44 @@ static void setup_proof_engine(void) {
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
-        setup_proof_engine();
-        proofWindow.hidden = NO;
-        
-        // Front camera mirroring
+        setup_vcam_master();
+        vcamWindow.hidden = NO;
         AVCaptureSession *s = self.session; BOOL f = NO;
         if (s) {
-            for (AVCaptureInput *i in s.inputs) {
-                if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; }
+            for (id i in s.inputs) {
+                if ([i isKindOfClass:objc_getClass("AVCaptureDeviceInput")] && ((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; }
             }
         }
-        proofLayer.transform = f ? CATransform3DMakeAffineTransform(CGAffineTransformMakeScale(-1, 1)) : CATransform3DIdentity;
+        vcamDisplay.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
         [self setOpacity:0.01];
     }
 }
 %end
 
+%hook AVCapturePhotoOutput
+- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)s delegate:(id)d {
+    if (enabled && lastValidFrame) objc_setAssociatedObject(s, "vcamS", lastValidFrame, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    %orig;
+}
+%end
+
+%hook AVCapturePhoto
+- (NSData *)fileDataRepresentation {
+    UIImage *snap = objc_getAssociatedObject([self resolvedSettings], "vcamS");
+    if (snap) return UIImageJPEGRepresentation(snap, 0.95);
+    return %orig;
+}
+- (struct CGImage *)CGImageRepresentation { UIImage *snap = objc_getAssociatedObject([self resolvedSettings], "vcamS"); if (snap) return snap.CGImage; return %orig; }
+%end
+
 %hook AVCaptureSession
-- (void)stopRunning { %orig; if (proofWindow) proofWindow.hidden = YES; }
+- (void)stopRunning { %orig; if (vcamWindow) vcamWindow.hidden = YES; }
 %end
 
 %ctor {
     NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
     if (p) {
         enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
-        if (p[@"rtspURL"]) rtspURL = p[@"rtspURL"];
+        if (p[@"rtspURL"]) streamURL = [p[@"rtspURL"] stringByReplacingOccurrencesOfString:@"/index.m3u8" withString:@""];
     }
-    proof_log(@"Tweak Injected");
 }
