@@ -1,9 +1,9 @@
 Package: com.murkaska.virtualcampro
 Name: VirtualCamPro
 Depends: mobilesubstrate, preferenceloader
-Version: 165.0.0
+Version: 166.0.0
 Architecture: iphoneos-arm64
-Description: Standalone RTSP Virtual Camera for iOS (KYC Stealth)
+Description: Virtual Camera for iOS (Ultimate KYC Stealth)
 Maintainer: MurkAskA
 Author: MurkAskA
 Section: Tweaks
