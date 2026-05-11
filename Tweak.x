@@ -1,55 +1,52 @@
-// VCAM V148.0: The Reliable HLS Restoration - Zero Buffering, Stealth Integration
+// VCAM V149.0: The Stability Master - Fix for Crashes & Perfect Scaling
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
-static NSString *streamURL = @"http://192.168.1.44:8889/live/stream/index.m3u8";
-static AVPlayer *vcamPlayer = nil;
-static AVPlayerLayer *vcamPlayerLayer = nil;
-static AVPlayerItemVideoOutput *videoOutput = nil;
-static UILabel *statusLabel = nil;
+static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
+static UIImageView *vcamImageView = nil;
+static UIImage *lastFrame = nil;
 
-static void update_status(NSString *text) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (statusLabel) statusLabel.text = [NSString stringWithFormat:@"VCAM: %@", text];
-    });
-}
-
-static void setup_hls_player(UIView *parent) {
-    if (!parent || (vcamPlayerLayer && vcamPlayerLayer.superlayer == parent.layer)) return;
-    if (vcamPlayerLayer) [vcamPlayerLayer removeFromSuperlayer];
-    if (statusLabel) [statusLabel removeFromSuperview];
-
-    // Diagnostic Label
-    statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 50, parent.bounds.size.width - 40, 60)];
-    statusLabel.textColor = [UIColor greenColor];
-    statusLabel.font = [UIFont boldSystemFontOfSize:12];
-    statusLabel.numberOfLines = 0;
-    statusLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.5];
-    [parent addSubview:statusLabel];
-    update_status([NSString stringWithFormat:@"Loading %@", streamURL]);
-
-    NSURL *url = [NSURL URLWithString:streamURL];
-    AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
+static void setup_vcam_stable(UIView *parent) {
+    if (!parent) return;
+    if (vcamImageView && vcamImageView.superview == parent) return;
     
-    vcamPlayer = [AVPlayer playerWithPlayerItem:item];
-    vcamPlayer.actionAtItemEnd = AVPlayerActionAtItemEndNone;
-    vcamPlayer.automaticallyWaitsToMinimizeStalling = NO;
+    if (vcamImageView) [vcamImageView removeFromSuperview];
 
-    videoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
-    [item addOutput:videoOutput];
+    vcamImageView = [[UIImageView alloc] initWithFrame:parent.bounds];
+    vcamImageView.backgroundColor = [UIColor blackColor];
+    vcamImageView.contentMode = UIViewContentModeScaleAspectFill;
+    vcamImageView.clipsToBounds = YES;
+    vcamImageView.userInteractionEnabled = NO;
+    
+    [parent insertSubview:vcamImageView atIndex:0];
 
-    vcamPlayerLayer = [AVPlayerLayer playerLayerWithPlayer:vcamPlayer];
-    vcamPlayerLayer.frame = parent.bounds;
-    vcamPlayerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-    vcamPlayerLayer.backgroundColor = [UIColor blackColor].CGColor;
+    // Efficient Background Loader
+    static dispatch_once_t onceToken;
+    static dispatch_queue_t queue;
+    dispatch_once(&onceToken, ^{
+        queue = dispatch_queue_create("com.vcam.loader", DISPATCH_QUEUE_SERIAL);
+    });
 
-    [parent.layer insertSublayer:vcamPlayerLayer atIndex:0];
-    [vcamPlayer play];
-
-    // Observer for readiness
-    [item addObserver:[[NSObject alloc] init] forKeyPath:@"status" options:NSKeyValueObservingOptionNew context:nil];
+    dispatch_async(queue, ^{
+        while (enabled) {
+            @autoreleasepool {
+                NSURL *url = [NSURL URLWithString:streamURL];
+                NSData *data = [NSData dataWithContentsOfURL:url options:NSDataReadingUncached error:nil];
+                if (data && data.length > 500) {
+                    UIImage *img = [UIImage imageWithData:data];
+                    if (img) {
+                        lastFrame = img;
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            if (vcamImageView) vcamImageView.image = img;
+                        });
+                    }
+                }
+            }
+            [NSThread sleepForTimeInterval:0.05];
+        }
+    });
 }
 
 %hook AVCaptureVideoPreviewLayer
@@ -59,17 +56,8 @@ static void setup_hls_player(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_hls_player(p);
-            vcamPlayerLayer.frame = p.bounds;
-            
-            AVCaptureSession *s = self.session;
-            BOOL isFront = NO;
-            if (s) {
-                for (AVCaptureDeviceInput *i in s.inputs) {
-                    if (i.device.position == 2) { isFront = YES; break; }
-                }
-            }
-            vcamPlayerLayer.transform = isFront ? CATransform3DMakeScale(-1, 1, 1) : CATransform3DIdentity;
+            setup_vcam_stable(p);
+            vcamImageView.frame = p.bounds;
             [self setOpacity:0.0];
         }
     }
@@ -78,32 +66,17 @@ static void setup_hls_player(UIView *parent) {
 
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && videoOutput) {
-        CMTime itemTime = [vcamPlayer.currentItem currentTime];
-        CVPixelBufferRef buffer = [videoOutput copyPixelBufferForItemTime:itemTime itemTimeForDisplay:nil];
-        if (buffer) {
-            CIImage *ci = [CIImage imageWithCVPixelBuffer:buffer];
-            CIContext *context = [CIContext context];
-            CGImageRef cgImg = [context createCGImage:ci fromRect:ci.extent];
-            UIImage *img = [UIImage imageWithCGImage:cgImg];
-            CGImageRelease(cgImg);
-            CVPixelBufferRelease(buffer);
-            return UIImageJPEGRepresentation(img, 0.95);
-        }
-    }
+    if (enabled && lastFrame) return UIImageJPEGRepresentation(lastFrame, 0.95);
     return %orig;
 }
 
 - (struct CGImage *)CGImageRepresentation {
-    if (enabled && videoOutput) {
-        CVPixelBufferRef buffer = [videoOutput copyPixelBufferForItemTime:[vcamPlayer.currentItem currentTime] itemTimeForDisplay:nil];
-        if (buffer) {
-            CIImage *ci = [CIImage imageWithCVPixelBuffer:buffer];
-            CGImageRef cg = [[CIContext context] createCGImage:ci fromRect:ci.extent];
-            CVPixelBufferRelease(buffer);
-            return cg;
-        }
-    }
+    if (enabled && lastFrame) return lastFrame.CGImage;
+    return %orig;
+}
+
+- (struct CGImage *)previewCGImageRepresentation {
+    if (enabled && lastFrame) return lastFrame.CGImage;
     return %orig;
 }
 %end
@@ -114,10 +87,8 @@ static void setup_hls_player(UIView *parent) {
         enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
         if (p[@"rtspURL"]) {
             NSString *raw = p[@"rtspURL"];
-            if (![raw hasSuffix:@"/index.m3u8"]) {
-                if ([raw hasSuffix:@"/"]) raw = [raw stringByAppendingString:@"index.m3u8"];
-                else raw = [raw stringByAppendingString:@"/index.m3u8"];
-            }
+            raw = [raw stringByReplacingOccurrencesOfString:@"/index.m3u8" withString:@""];
+            if ([raw hasSuffix:@"/"]) raw = [raw substringToIndex:[raw length]-1];
             streamURL = raw;
         }
     }
