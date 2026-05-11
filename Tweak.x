@@ -1,89 +1,73 @@
-// VCAM V155.0: The Final Stealth Strike - Clean Text Fix & Perfect UI
-#import <UIKit/UIKit.h>
-#import <WebKit/WebKit.h>
-#import <AVFoundation/AVFoundation.h>
-#import <objc/runtime.h>
-
-static BOOL enabled = YES;
-static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
-static WKWebView *vcamWebView = nil;
-static UIImage *snapshotForHijack = nil;
-
-static void setup_vcam_final_boss(UIView *parent) {
-    if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
-    if (vcamWebView) [vcamWebView removeFromSuperview];
-
-    WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
-    config.allowsInlineMediaPlayback = YES;
-    config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
-    
-    vcamWebView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
-    vcamWebView.backgroundColor = [UIColor blackColor];
-    vcamWebView.userInteractionEnabled = NO;
-    vcamWebView.scrollView.scrollEnabled = NO;
-
-    [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
-
-    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; outline: none !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black; overflow: hidden; } .vjs-control-bar, .vjs-big-play-button, button, header, footer, .controls, .play-button { display: none !important; }'; document.head.appendChild(s);";
-    WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
-    [vcamWebView.configuration.userContentController addUserScript:script];
-
-    [parent insertSubview:vcamWebView atIndex:0];
-
-    [NSTimer scheduledTimerWithTimeInterval:0.4 repeats:YES block:^(NSTimer *t) {
-        if (!enabled) return;
-        [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
-            if (img) snapshotForHijack = img;
-        }];
-    }];
-}
-
-%hook AVCaptureVideoPreviewLayer
-- (void)layoutSublayers {
-    %orig;
-    if (enabled) {
-        UIView *p = (UIView *)self.delegate;
-        if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
-        if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_final_boss(p);
-            vcamWebView.frame = p.bounds;
-            [p sendSubviewToBack:vcamWebView];
-            
-            AVCaptureSession *s = self.session;
-            BOOL isFront = NO;
-            if (s) {
-                for (id i in s.inputs) {
-                    if ([i isKindOfClass:objc_getClass("AVCaptureDeviceInput")] && ((AVCaptureDeviceInput *)i).device.position == 2) { isFront = YES; break; }
-                }
-            }
-            vcamWebView.transform = isFront ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
-            [self setOpacity:0.0];
-        }
-    }
-}
-%end
-
-%hook AVCapturePhoto
-- (NSData *)fileDataRepresentation {
-    if (enabled && snapshotForHijack) return UIImageJPEGRepresentation(snapshotForHijack, 0.95);
-    return %orig;
-}
-
-- (struct CGImage *)CGImageRepresentation {
-    if (enabled && snapshotForHijack) return snapshotForHijack.CGImage;
-    return %orig;
-}
-
-- (struct CGImage *)previewCGImageRepresentation {
-    if (enabled && snapshotForHijack) return snapshotForHijack.CGImage;
-    return %orig;
-}
-%end
-
-%ctor {
-    NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
-    if (p) {
-        enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
-        if (p[@"rtspURL"]) streamURL = p[@"rtspURL"];
-    }
-}
+Ly8gVkNBTSBWMTU2LjA6IFRoZSBTdGVhbHRoIE1hc3RlciAtIFRyYmUgcXVp
+Y2sgY2xlYW4gJiBUaHVtYm5haWwgRml4CiNpbXBvcnQgPFVJS2l0L1VJS2l0
+aD4KI2ltcG9ydCA8V2ViS2l0L1dlYktpdC5oPgojaW1wb3J0IDxBVkZvdW5k
+YXRpb24vQVZGb3VuZGF0aW9uLmg+CiNpbXBvcnQgPG9iamMvcnVudGltZS5o
+PgoKc3RhdGljIEJPT0wgZW5hYmxlZCA9IFlFUzsKc3RhdGljIE5TU3RyaW5n
+ICpzdHJlYW1VUkwgPSBAImh0dHA6Ly8xOTIuMTY4LjEuNDQ6ODg4OS9saXZl
+L3N0cmVhbSI7CnN0YXRpYyBXS1dlYlZpZXcgKnZjYW1XZWJWaWV3ID0gbmls
+OwpzdGF0aWMgVUlJbWFnZSAqc25hcHNob3RGb3JIaWphY2sgPSBuaWw7Cgpz
+dGF0aWMgdm9pZCBzZXR1cF92Y2FtX3YxNTZfbmF0aXZlKFVJVmlldyAqcGFy
+ZW50KSB7CiAgICBpZiAoIXBhcmVudCB8fCAodmNhbVdlYlZpZXcgJiYgdmNh
+bVdlYlZpZXcuc3VwZXJ2aWV3ID09IHBhcmVudCkpIHJldHVybjsKICAgIGlm
+ICh2Y2FtV2ViVmlldykgW3ZjYW1XZWJWaWV3IHJlbW92ZUZyb21TdXBlcnZp
+dXddOwogICAgCiAgICBXS1dlYlZpZXdDb25maWd1cmF0aW9uICpjb25maWcg
+PSBbW1dLV2ViVmlld0NvbmZpZ3VyYXRpb24gYWxsb2NdIGluaXRdOwogICAg
+Y29uZmlnLmFsbG93c0lubGluZU1lZGlhUGxheWJhY2sgPSBZRVM7CiAgICBj
+b25maWcubWVkaWFUeXBlc1JlcXVpcmluZ1VzZXJBY3Rpb25Gb3JQbGF5YmFj
+ayA9IFdLQXVkaW92aXN1YWxNZWRpYVR5cGVOb25lOwogICAgCiAgICB2Y2Ft
+V2ViVmlldyA9IFtbV0tXZWJWaWV3IGFsbG9jXSBpbml0V2l0aEZyYW1lOnBh
+cmVudC5ib3VuZHMgY29uZmlndXJhdGlvbjpjb25maWddOwogICAgdmNhbVdl
+YlZpZXcuYmFja2dyb3VuZENvbG9yID0gW1VJQ29sb3IgYmxhY2tDb2xvcl07
+CiAgICB2Y2FtV2ViVmlldy51c2VySW50ZXJhY3Rpb25FbmFibGVkID0gTk87
+CiAgICB2Y2FtV2ViVmlldy5zY3JvbGxWaWV3LnNjcm9sbEVuYWJsZWQgPSBO
+TzsKICAgIAogICAgLy8gQWdncmVzc2l2ZSBVSSB3aXBlciAtIFJlbW92ZXMg
+cGF1c2UgYnV0dG9uIGV2ZXJ5IDEwMG1zCiAgICBOU1N0cmluZyAqanNDbGVh
+biA9IEAiIHNldEludGVydmFsKGZ1bmN0aW9uKCkgewogICAgICAgIHZhciBl
+bHMgPSBkb2N1bWVudC5xdWVyeVNlbGVjdG9yQWxsKCdidXR0b24sIC52anMt
+YmlnLXBsYXktYnV0dG9uLCAudmpzLWNvbnRyb2wtYmFyLCAuaGVhZGVyLCAu
+Zm9vdGVyLCAuY29udHJvbHMsIC5wbGF5LWJ1dHRvbicpOwogICAgICAgIGZv
+ciAodmFyIGkgPSAwOyBpIDwgZWxzLmxlbmd0aDsgaSsrKSBlbHNbaV0uc3R5
+bGUuZGlzcGxheSA9ICdub25lJzsKICAgICAgICB2YXIgdiA9IGRvY3VtZW50
+LnF1ZXJ5U2VsZWN0b3IoJ3ZpZGVvJyk7IGlmICh2ICYmIHYucGF1c2VkKSB2
+LnBsYXkoKTsKICAgIH0sIDEwMCk7IjsKICAgIFdLVXNlclNjcmlwdCAqc2Ny
+aWVwdCA9IFtbV0tVc2VyU2NyaXB0IGFsbG9jXSBpbml0V2l0aFNvdXJjZTpq
+c0NsZWFuIGluamVjdGlvblRpbWU6V0tVc2VyU2NyaXB0SW5qZWN0aW9uVGlt
+ZUF0RG9jdW1lbnRFbmQgZm9yTWFpbkZyYW1lT25seTpZRVNdOwogICAgW3Zj
+YW1XZWJWaWV3LmNvbmZpZ3VyYXRpb24udXNlckNvbnRlbnRDb250cm9sbGVy
+IGFkZFVzZXJTY3JpcHQ6c2NyaWVwdF07CiAgICAKICAgIFt2Y2FtV2ViVmll
+dyBsb2FkUmVxdWVzdDpbbnN1cmxyZXF1ZXN0IHJlcXVlc3RXaXRoVVJMOltO
+U1VSTAogVVJMV2l0aFN0cmluZzpzdHJlYW1VUkxdXV07CiAgICBbcGFyZW50
+IGluc2VydFN1YnZpZXc6dmNhbVdlYlZpZXcgYXRJbmRleDowXTsKICAgIAog
+ICAgW05TVGltZXIgc2NoZWR1bGVkVGltZXJXaXRoVGltZUludGVydmFsOjAu
+MjUgcmVwZWF0czpZRVMgYmxvY2s6XihOU1RpbWVyICp0KSB7CiAgICAgICAg
+W3ZjYW1XZWJWaWV3IHRha2VTbmFwc2hvdFdpdGhDb25maWd1cmF0aW9uOm5p
+bCBjb21wbGV0aW9uSGFuZGxlcjpeKFVJSW1hZ2UgKmltZywgTlNFcnJvciAq
+ZXJyKSB7CiAgICAgICAgICAgIGlmIChpbWcpIHNuYXBzaG90Rm9ySGlqYWNr
+ID0gaW1nOwogICAgICAgIH1dOwogICAgfV07Cn0KCiVob29rIEFWQ2FwdHVy
+ZVZpZGVvUHJldmlld0xheWVyCi0gKHZvaWQpbGF5b3V0U3VibGF5ZXJzIHsK
+ICAgICVvcmlnOwogICAgaWYgKGVuYWJsZWQpIHsKICAgICAgICBVSVZpZXcg
+KnAgPSAoVUlWaWV3ICopc2VsZi5kZWxlZ2F0ZTsKICAgICAgICBpZiAoIXAg
+fHwgIVtwIGlzS2luZE9mQ2xhc3M6W1VJVmlldyBjbGFzc11dKSBwID0gKFVJ
+VmlldyAqKXNlbGYuc3VwZXJsYXllci5kZWxlZ2F0ZTsKICAgICAgICBpZiAo
+cCAmJiBbcCBpc0tpbmRPZkNsYXNzOltVSVZpZXcgY2xhc3NdXSkgewogICAg
+ICAgICAgICBzZXR1cF92Y2FtX3YxNTZfbmF0aXZlKHApOwogICAgICAgICAg
+ICB2Y2FtV2ViVmlldy5mcmFtZSA9IHAuYm91bmRzOwogICAgICAgICAgICBb
+cCBzZW5kU3Vidmlld1RvQmFjazp2Y2FtV2ViVmlld107CiAgICAgICAgICAg
+IFtzZWxmIHNldE9wYWNpdHk6MC4wXTsKICAgICAgICB9CiAgICB9Cn0KJWVu
+ZAoKJWhvb2sgQVZDYXB0dXJlUGhvdG8KLSAoTlNEYXRhICopZmlsZURhdGFS
+ZXByZXNlbnRhdGlvbiB7CiAgICBpZiAoZW5hYmxlZCAmJiBzbmFwc2hvdEZv
+ckhpamFjaykgcmV0dXJuIFVJSW1hZ2VKUEVHUmVwcmVzZW50YXRpb24oc25h
+cHNob3RGb3JIaWphY2ssIDAuOTUpOwogICAgcmV0dXJuICVvcmlnOwp9Ci0g
+KHN0cnVjdCBDR0ltYWdlICopQ0dJbWFnZVJlcHJlc2VudGF0aW9uIHsKICAg
+IGlmIChlbmFibGVkICYmIHNuYXBzaG90Rm9ySGlqYWNrKSByZXR1cm4gc25h
+cHNob3RGb3JIaWphY2suQ0dJbWFnZTsKICAgIHJldHVybiAlb3JpZzsKfQot
+IChzdHJ1Y3QgQ0dJbWFnZSAqKXByZXZpZXdDR0ltYWdlUmVwcmVzZW50YXRp
+b24gewogICAgaWYgKGVuYWJsZWQgJiYgc25hcHNob3RGb3JIaWphY2spIHJl
+dHVybiBzbmFwc2hvdEZvckhpamFjay5DR0ltYWdlOwogICAgcmV0dXJuICVv
+cmlnOwp9CiVlbmQKCiVjdG9yIHsKICAgIE5TRGljdGlvbmFyeSAqcCA9IFtO
+U0RpY3Rpb25hcnkgZGljdGlvbmFyeVdpdGhDb250ZW50c09mRmlsZTpAIi92
+YXIvbW9iaWxlL0xpYnJhcnkvUHJlZmVyZW5jZXMvY29tLm11cmthc2thLnZj
+YW1wcm8ucGxpc3QiXTsKICAgIGlmIChwKSB7CiAgICAgICAgZW5hYmxlZCA9
+IHBbQCJlbmFibGVkIl0gPyBbcFtAImVuYWJsZWQiXSBib29sVmFsdWVdIDog
+WUVTOwogICAgICAgIGlmIChwW0AicnRzcFVSTCJdKSBzdHJlYW1VUkwgPSBw
+W0AicnRzcFVSTCJdOwogICAgfQp9Cg==
