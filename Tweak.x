@@ -1,4 +1,4 @@
-// VCAM V176.0: The Final Thumbnail Killer - Absolute KYC Stealth
+// VCAM V177.0: The Final KYC Master Fix - No Leaks, No Artifacts
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -10,7 +10,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v176(UIView *parent) {
+static void setup_vcam_v177(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -31,7 +31,7 @@ static void setup_vcam_v176(UIView *parent) {
 
     [parent insertSubview:vcamWebView atIndex:0];
 
-    [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
+    [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *t) {
         if (!enabled) return;
         [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
             if (img) sharedSnapshot = img;
@@ -39,36 +39,35 @@ static void setup_vcam_v176(UIView *parent) {
     }];
 }
 
-// 1. SYSTEM-WIDE IMAGE CREATION HIJACK (Threshold: 20px)
+// 1. GLOBAL UIIMAGE CREATION HIJACK (Zero Threshold for KYC)
 %hook UIImage
 + (UIImage *)imageWithCGImage:(struct CGImage *)cgImage {
     if (enabled && sharedSnapshot && cgImage) {
-        if (CGImageGetWidth(cgImage) > 20) return sharedSnapshot;
+        return sharedSnapshot;
     }
     return %orig;
 }
 + (UIImage *)imageWithData:(NSData *)data {
-    if (enabled && sharedSnapshot && data.length > 3000) return sharedSnapshot;
+    if (enabled && sharedSnapshot && data.length > 500) return sharedSnapshot;
     return %orig;
 }
 %end
 
-// 2. DATA REPRESENTATION HIJACK (Force virtual bytes)
+// 2. DATA REPRESENTATION HIJACK
 FOUNDATION_EXTERN NSData *UIImageJPEGRepresentation(UIImage *image, CGFloat compressionQuality);
 %hookf(NSData *, UIImageJPEGRepresentation, UIImage *image, CGFloat compressionQuality) {
-    if (enabled && sharedSnapshot && image != sharedSnapshot && image.size.width > 20) {
+    if (enabled && sharedSnapshot && image != sharedSnapshot) {
         return %orig(sharedSnapshot, compressionQuality);
     }
     return %orig(image, compressionQuality);
 }
 
-// 3. DATABASE IMAGE MANAGER HIJACK (Simplified Syntax for Build Fix)
+// 3. GALLERY DATABASE HIJACK (Safe Syntax)
 %hook PHImageManager
 - (int)requestImageForAsset:(id)asset targetSize:(struct CGSize)targetSize contentMode:(int)contentMode options:(id)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
     if (enabled && sharedSnapshot && resultHandler) {
-        return %orig(asset, targetSize, contentMode, options, ^(UIImage *res, NSDictionary *inf) {
-            resultHandler(sharedSnapshot, inf);
-        });
+        resultHandler(sharedSnapshot, nil);
+        return 1337; 
     }
     return %orig;
 }
@@ -82,12 +81,24 @@ FOUNDATION_EXTERN NSData *UIImageJPEGRepresentation(UIImage *image, CGFloat comp
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v176(p);
+            setup_vcam_v177(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             [self setOpacity:0.0];
         }
     }
+}
+%end
+
+// 5. PHOTO RESULT HIJACK
+%hook AVCapturePhoto
+- (struct CGImage *)CGImageRepresentation {
+    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
+    return %orig;
+}
+- (struct CGImage *)previewCGImageRepresentation {
+    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
+    return %orig;
 }
 %end
 
