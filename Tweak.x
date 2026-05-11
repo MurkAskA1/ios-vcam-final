@@ -1,4 +1,4 @@
-// VCAM V175.0: The Total Eraser - No Thumbnail Leaks
+// VCAM V176.0: The Final Thumbnail Killer - Absolute KYC Stealth
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -10,7 +10,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v175(UIView *parent) {
+static void setup_vcam_v176(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -39,35 +39,35 @@ static void setup_vcam_v175(UIView *parent) {
     }];
 }
 
-// 1. GLOBAL UIIMAGE CREATION HIJACK (Aggressive threshold: 30px)
+// 1. SYSTEM-WIDE IMAGE CREATION HIJACK (Threshold: 20px)
 %hook UIImage
 + (UIImage *)imageWithCGImage:(struct CGImage *)cgImage {
     if (enabled && sharedSnapshot && cgImage) {
-        if (CGImageGetWidth(cgImage) > 30) return sharedSnapshot;
+        if (CGImageGetWidth(cgImage) > 20) return sharedSnapshot;
     }
     return %orig;
 }
 + (UIImage *)imageWithData:(NSData *)data {
-    if (enabled && sharedSnapshot && data.length > 5000) return sharedSnapshot;
+    if (enabled && sharedSnapshot && data.length > 3000) return sharedSnapshot;
     return %orig;
 }
 %end
 
-// 2. DATA REPRESENTATION HIJACK (No original bytes in file)
+// 2. DATA REPRESENTATION HIJACK (Force virtual bytes)
 FOUNDATION_EXTERN NSData *UIImageJPEGRepresentation(UIImage *image, CGFloat compressionQuality);
 %hookf(NSData *, UIImageJPEGRepresentation, UIImage *image, CGFloat compressionQuality) {
-    if (enabled && sharedSnapshot && image != sharedSnapshot && image.size.width > 30) {
+    if (enabled && sharedSnapshot && image != sharedSnapshot && image.size.width > 20) {
         return %orig(sharedSnapshot, compressionQuality);
     }
     return %orig(image, compressionQuality);
 }
 
-// 3. DATABASE IMAGE MANAGER HIJACK (For gallery icons)
+// 3. DATABASE IMAGE MANAGER HIJACK (Simplified Syntax for Build Fix)
 %hook PHImageManager
 - (int)requestImageForAsset:(id)asset targetSize:(struct CGSize)targetSize contentMode:(int)contentMode options:(id)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
     if (enabled && sharedSnapshot && resultHandler) {
-        return %orig(asset, targetSize, contentMode, options, ^(UIImage *result, NSDictionary *info) {
-            resultHandler(sharedSnapshot, info);
+        return %orig(asset, targetSize, contentMode, options, ^(UIImage *res, NSDictionary *inf) {
+            resultHandler(sharedSnapshot, inf);
         });
     }
     return %orig;
@@ -82,7 +82,7 @@ FOUNDATION_EXTERN NSData *UIImageJPEGRepresentation(UIImage *image, CGFloat comp
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v175(p);
+            setup_vcam_v176(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             [self setOpacity:0.0];
