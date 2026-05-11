@@ -1,83 +1,76 @@
-// VCAM V111.1: MJPEG Engine Fix - Syntax Correction
+// VCAM V112.0: The Window Master - Extreme Layer Override
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
-static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
-static UIImageView *vcamImageView = nil;
-static UIImage *lastGrabbedFrame = nil;
+static NSString *streamURL = @"http://192.168.1.44:8889/live/stream/index.m3u8";
+static UIWindow *vcamVideoWindow = nil;
+static AVPlayer *vcamPlayer = nil;
+static AVPlayerLayer *vcamLayer = nil;
+static UIImage *lastVFrame = nil;
+static AVPlayerItemVideoOutput *vOutput = nil;
 
 void v_log(NSString *m) {
-    NSString *p = @"/var/mobile/Documents/vcam_MJPEG.log";
+    NSString *p = @"/var/mobile/Documents/vcam_WINDOW.log";
     NSString *f = [NSString stringWithFormat:@"[%@] %@\n", [NSDate date], m];
-    NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:p];
-    if (h) { [h seekToEndOfFile]; [h writeData:[f dataUsingEncoding:NSUTF8StringEncoding]]; [h closeFile]; }
-    else { [f writeToFile:p atomically:YES encoding:NSUTF8StringEncoding error:nil]; }
+    [[f dataUsingEncoding:NSUTF8StringEncoding] writeToFile:p atomically:NO];
 }
 
-@interface VCamMJPEGProvider : NSObject <NSURLSessionDataDelegate>
-@property (nonatomic, strong) NSMutableData *buffer;
-+ (instancetype)shared;
-- (void)start;
-@end
-
-@implementation VCamMJPEGProvider
-+ (instancetype)shared { static VCamMJPEGProvider *s = nil; static dispatch_once_t once; dispatch_once(&once, ^{ s = [[self alloc] init]; }); return s; }
-- (void)start {
-    self.buffer = [NSMutableData data];
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration defaultSessionConfiguration] delegate:self delegateQueue:[NSOperationQueue mainQueue]];
-    [[session dataTaskWithURL:[NSURL URLWithString:streamURL]] resume];
-    v_log(@"MJPEG Stream Task Started");
-}
-- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
-    [self.buffer appendData:data];
-    const unsigned char *bytes = (const unsigned char *)self.buffer.bytes;
-    NSInteger length = self.buffer.length;
-    
-    for (NSInteger i = 0; i < length - 1; i++) {
-        if (bytes[i] == 0xFF && bytes[i+1] == 0xD8) { // Start of Image
-            for (NSInteger j = i + 1; j < length - 1; j++) {
-                if (bytes[j] == 0xFF && bytes[j+1] == 0xD9) { // End of Image
-                    NSData *jpegData = [self.buffer subdataWithRange:NSMakeRange(i, j - i + 2)];
-                    UIImage *img = [UIImage imageWithData:jpegData];
-                    if (img) {
-                        lastGrabbedFrame = img;
-                        if (vcamImageView) vcamImageView.image = img;
-                    }
-                    [self.buffer replaceBytesInRange:NSMakeRange(0, j + 2) withBytes:NULL length:0];
-                    return;
-                }
-            }
-        }
+@interface VCamFrameLink : NSObject + (void)tick; @end
+@implementation VCamFrameLink
++ (void)tick {
+    if (!vOutput || !vcamPlayer.currentItem) return;
+    CVPixelBufferRef pb = [vOutput copyPixelBufferForItemTime:[vcamPlayer.currentItem currentTime] itemTimeForDisplay:NULL];
+    if (pb) {
+        CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
+        CIContext *ctx = [CIContext contextWithOptions:nil];
+        CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
+        if (cg) { lastVFrame = [UIImage imageWithCGImage:cg]; CGImageRelease(cg); }
+        CVPixelBufferRelease(pb);
     }
 }
 @end
+
+static void setup_master_window(void) {
+    if (vcamVideoWindow) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        vcamVideoWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        vcamVideoWindow.windowLevel = UIWindowLevelAlert + 1000;
+        vcamVideoWindow.backgroundColor = [UIColor blueColor];
+        vcamVideoWindow.userInteractionEnabled = NO;
+        vcamVideoWindow.hidden = NO;
+        
+        vcamPlayer = [AVPlayer playerWithURL:[NSURL URLWithString:streamURL]];
+        vcamLayer = [AVPlayerLayer playerLayerWithPlayer:vcamPlayer];
+        vcamLayer.frame = vcamVideoWindow.bounds;
+        vcamLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+        [vcamVideoWindow.layer addSublayer:vcamLayer];
+        
+        vOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
+        [vcamPlayer.currentItem addOutput:vOutput];
+        [vcamPlayer play];
+        
+        CADisplayLink *link = [CADisplayLink displayLinkWithTarget:[VCamFrameLink class] selector:@selector(tick)];
+        [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+        v_log(@"Master Window Created");
+    });
+}
 
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
-    if (!enabled) return;
-    if (!vcamImageView) {
-        vcamImageView = [[UIImageView alloc] init];
-        vcamImageView.contentMode = UIViewContentModeScaleAspectFill;
-        vcamImageView.backgroundColor = [UIColor greenColor];
-        [[VCamMJPEGProvider shared] start];
+    if (enabled) {
+        setup_master_window();
+        vcamVideoWindow.hidden = NO;
+        self.opacity = 0.0;
     }
-    if (vcamImageView.layer.superlayer != self) [self addSublayer:vcamImageView.layer];
-    vcamImageView.frame = self.bounds;
-    vcamImageView.layer.zPosition = 999999;
-    
-    AVCaptureSession *s = self.session; BOOL f = NO;
-    for (AVCaptureInput *i in s.inputs) { if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == AVCaptureDevicePositionFront) { f = YES; break; } }
-    vcamImageView.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
-    self.opacity = 0.01;
 }
 %end
 
 %hook AVCapturePhotoOutput
 - (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)s delegate:(id)d {
-    if (enabled && lastGrabbedFrame) objc_setAssociatedObject(s, "vcamS", lastGrabbedFrame, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (enabled && lastVFrame) objc_setAssociatedObject(s, "vcamS", lastVFrame, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     %orig;
 }
 %end
@@ -92,14 +85,14 @@ void v_log(NSString *m) {
 %end
 
 %hook AVCaptureSession
-- (void)startRunning { %orig; v_log(@"Camera Session Started"); }
+- (void)stopRunning { %orig; if (vcamVideoWindow) vcamVideoWindow.hidden = YES; }
 %end
 
 %ctor {
     NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
     if (p) {
         enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
-        if (p[@"rtspURL"]) streamURL = [p[@"rtspURL"] stringByReplacingOccurrencesOfString:@"/index.m3u8" withString:@""];
+        if (p[@"rtspURL"]) streamURL = p[@"rtspURL"];
     }
-    v_log(@"VCAM V111.1 MJPEG LOADED");
+    v_log(@"VCAM V112.0 Master Loaded");
 }
