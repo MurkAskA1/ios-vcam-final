@@ -1,10 +1,11 @@
-// VCAM V122.0: Core Hijack - Direct Signal Replacement (Telegram & Photo Fix)
+// VCAM V123.0: The Stealth Inlay - Direct View Injection (Buttons & TG Fix)
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
 static NSString *vURL = @"http://192.168.1.44:8889/live/stream";
+static UIImageView *vcamContainer = nil;
 static UIImage *sharedSnap = nil;
 static NSMutableData *vBuffer = nil;
 
@@ -24,7 +25,10 @@ static NSMutableData *vBuffer = nil;
             for (NSInteger j = i + 1; j < len - 1; j++) {
                 if (b[j] == 0xFF && b[j+1] == 0xD9) {
                     UIImage *img = [UIImage imageWithData:[vBuffer subdataWithRange:NSMakeRange(i, j - i + 2)]];
-                    if (img) sharedSnap = img;
+                    if (img) { 
+                        sharedSnap = img; 
+                        if (vcamContainer) vcamContainer.image = img;
+                    }
                     [vBuffer replaceBytesInRange:NSMakeRange(0, j + 2) withBytes:NULL length:0]; return;
                 }
             }
@@ -33,57 +37,65 @@ static NSMutableData *vBuffer = nil;
 }
 @end
 
-// 1. Hooking the Preview Layer to show our stream INSIDE it
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
         [[VCamEngine shared] start];
-        CALayer *targetLayer = nil;
-        for (CALayer *sub in self.sublayers) {
-            if ([sub.name isEqualToString:@"vcamLayer"]) { targetLayer = sub; break; }
-        }
-        if (!targetLayer) {
-            targetLayer = [CALayer layer];
-            targetLayer.name = @"vcamLayer";
-            targetLayer.contentsGravity = kCAGravityResizeAspectFill;
-            targetLayer.zPosition = 9999;
-            [self addSublayer:targetLayer];
-        }
-        if (sharedSnap) targetLayer.contents = (__bridge id)sharedSnap.CGImage;
-        targetLayer.frame = self.bounds;
         
-        // Mirroring logic
-        AVCaptureSession *session = self.session;
-        BOOL isFront = NO;
-        for (AVCaptureInput *input in session.inputs) {
-            if ([input isKindOfClass:[AVCaptureDeviceInput class]]) {
-                if (((AVCaptureDeviceInput *)input).device.position == 2) { isFront = YES; break; }
+        // Get the parent view that holds the preview layer
+        UIView *parentView = (UIView *)self.delegate;
+        if (parentView && [parentView isKindOfClass:[UIView class]]) {
+            if (!vcamContainer) {
+                vcamContainer = [[UIImageView alloc] initWithFrame:parentView.bounds];
+                vcamContainer.contentMode = UIViewContentModeScaleAspectFill;
+                vcamContainer.backgroundColor = [UIColor blackColor];
+                vcamContainer.userInteractionEnabled = NO;
             }
+            
+            if (vcamContainer.superview != parentView) {
+                [parentView insertSubview:vcamContainer atIndex:0]; // Insert behind controls
+            }
+            
+            vcamContainer.frame = parentView.bounds;
+            [parentView bringSubviewToFront:vcamContainer]; // Ensure it covers the real lens layer
+            
+            // Mirroring logic
+            AVCaptureSession *s = self.session; BOOL f = NO;
+            for (AVCaptureInput *i in s.inputs) { 
+                if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; } 
+            }
+            vcamContainer.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
+            
+            // HIDE REAL LENS PREVIEW
+            [self setOpacity:0.0];
         }
-        targetLayer.transform = isFront ? CATransform3DMakeAffineTransform(CGAffineTransformMakeScale(-1, 1)) : CATransform3DIdentity;
     }
 }
 %end
 
-// 2. Direct Photo Hijack - replacing the captured image data
+%hook AVCapturePhotoOutput
+- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)s delegate:(id)d {
+    if (enabled && sharedSnap) objc_setAssociatedObject(s, "vcamS", sharedSnap, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    %orig;
+}
+%end
+
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && sharedSnap) return UIImageJPEGRepresentation(sharedSnap, 0.95);
+    UIImage *snap = objc_getAssociatedObject([self resolvedSettings], "vcamS");
+    if (snap) return UIImageJPEGRepresentation(snap, 0.95);
     return %orig;
 }
 - (struct CGImage *)CGImageRepresentation {
-    if (enabled && sharedSnap) return sharedSnap.CGImage;
+    UIImage *snap = objc_getAssociatedObject([self resolvedSettings], "vcamS");
+    if (snap) return snap.CGImage;
     return %orig;
 }
 %end
 
-// 3. Ensuring stability in session-based apps like Telegram
 %hook AVCaptureSession
-- (void)startRunning {
-    [[VCamEngine shared] start];
-    %orig;
-}
+- (void)startRunning { [[VCamEngine shared] start]; %orig; }
 %end
 
 %ctor {
