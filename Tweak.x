@@ -1,65 +1,65 @@
-// VCAM V127.0: The Final KYC Master - MJPEG Passthrough Engine
+// VCAM V128.0: The Chrome Mirror - WKWebView Passthrough Engine
 #import <UIKit/UIKit.h>
+#import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static UIWindow *vcamWindow = nil;
-static UIImageView *vcamDisplay = nil;
-static UIImage *lastValidFrame = nil;
-static NSMutableData *mBuffer = nil;
+static WKWebView *vcamWebView = nil;
+static UIImage *snapshotForPhoto = nil;
 
 @interface VCamPassthroughWindow : UIWindow @end
 @implementation VCamPassthroughWindow
+// Absolute touch passthrough: ignore all touches so they reach the app below
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *hitView = [super hitTest:point withEvent:event];
-    if (hitView == self || hitView == self.rootViewController.view || hitView == vcamDisplay) return nil;
-    return hitView;
+    return nil;
 }
 @end
 
-@interface VCamFetcher : NSObject <NSURLSessionDataDelegate> + (instancetype)shared; - (void)start; @end
-@implementation VCamFetcher
-+ (instancetype)shared { static VCamFetcher *s = nil; static dispatch_once_t o; dispatch_once(&o, ^{ s = [[self alloc] init]; }); return s; }
-- (void)start {
-    mBuffer = [NSMutableData data];
-    NSURLSession *s = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration ephemeralSessionConfiguration] delegate:self delegateQueue:[NSOperationQueue mainQueue]];
-    [[s dataTaskWithURL:[NSURL URLWithString:streamURL]] resume];
-}
-- (void)URLSession:(NSURLSession *)s dataTask:(NSURLSessionDataTask *)t didReceiveData:(NSData *)d {
-    [mBuffer appendData:d];
-    const unsigned char *b = (const unsigned char *)mBuffer.bytes; NSInteger len = mBuffer.length;
-    for (NSInteger i = 0; i < len - 1; i++) {
-        if (b[i] == 0xFF && b[i+1] == 0xD8) {
-            for (NSInteger j = i + 1; j < len - 1; j++) {
-                if (b[j] == 0xFF && b[j+1] == 0xD9) {
-                    UIImage *img = [UIImage imageWithData:[mBuffer subdataWithRange:NSMakeRange(i, j - i + 2)]];
-                    if (img) { lastValidFrame = img; if (vcamDisplay) vcamDisplay.image = img; }
-                    [mBuffer replaceBytesInRange:NSMakeRange(0, j + 2) withBytes:NULL length:0]; return;
-                }
-            }
-        }
-    }
-}
+@interface VCamRootVC : UIViewController @end
+@implementation VCamRootVC
+- (BOOL)prefersStatusBarHidden { return YES; }
 @end
 
-static void setup_vcam_master(void) {
+static void setup_web_mirror(void) {
     if (vcamWindow) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         vcamWindow = [[VCamPassthroughWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
         vcamWindow.windowLevel = UIWindowLevelAlert + 5000;
+        vcamWindow.userInteractionEnabled = NO;
         vcamWindow.backgroundColor = [UIColor clearColor];
-        vcamWindow.userInteractionEnabled = YES;
-        vcamWindow.rootViewController = [[UIViewController alloc] init];
+        vcamWindow.rootViewController = [[VCamRootVC alloc] init];
         vcamWindow.hidden = NO;
         
-        vcamDisplay = [[UIImageView alloc] initWithFrame:vcamWindow.bounds];
-        vcamDisplay.contentMode = UIViewContentModeScaleAspectFill;
-        vcamDisplay.userInteractionEnabled = NO;
-        [vcamWindow.rootViewController.view addSubview:vcamDisplay];
+        WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+        config.allowsInlineMediaPlayback = YES;
+        config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
         
-        [[VCamFetcher shared] start];
+        vcamWebView = [[WKWebView alloc] initWithFrame:vcamWindow.bounds configuration:config];
+        vcamWebView.backgroundColor = [UIColor clearColor];
+        vcamWebView.opaque = NO;
+        vcamWebView.userInteractionEnabled = NO;
+        vcamWebView.scrollView.scrollEnabled = NO;
+        
+        // Aggressive CSS to force fullscreen and hide all browser/player UI
+        NSString *css = @"* { background: transparent !important; } "
+                        "video { position: fixed !important; top: 0 !important; left: 0 !important; "
+                        "width: 100vw !important; height: 100vh !important; object-fit: cover !important; } "
+                        "button, .controls, .overlay, .play-button { display: none !important; }";
+        WKUserScript *script = [[WKUserScript alloc] initWithSource:[NSString stringWithFormat:@"var s = document.createElement('style'); s.innerHTML = '%@'; document.head.appendChild(s);", css] injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
+        [vcamWebView.configuration.userContentController addUserScript:script];
+        
+        [vcamWindow.rootViewController.view addSubview:vcamWebView];
+        [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
+        
+        // Continuous snapshotting for photo hijack
+        [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
+            [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
+                if (img) snapshotForPhoto = img;
+            }];
+        }];
     });
 }
 
@@ -67,15 +67,21 @@ static void setup_vcam_master(void) {
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
-        setup_vcam_master();
+        setup_web_mirror();
         vcamWindow.hidden = NO;
-        AVCaptureSession *s = self.session; BOOL f = NO;
+        
+        // Front camera mirroring detection
+        AVCaptureSession *s = nil;
+        @try { s = [self session]; } @catch(id e) {}
+        BOOL isFront = NO;
         if (s) {
-            for (id i in s.inputs) {
-                if ([i isKindOfClass:objc_getClass("AVCaptureDeviceInput")] && ((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; }
+            for (id input in [s inputs]) {
+                if ([input isKindOfClass:objc_getClass("AVCaptureDeviceInput")]) {
+                    if (((AVCaptureDeviceInput *)input).device.position == 2) { isFront = YES; break; }
+                }
             }
         }
-        vcamDisplay.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
+        vcamWebView.transform = isFront ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
         [self setOpacity:0.01];
     }
 }
@@ -83,7 +89,7 @@ static void setup_vcam_master(void) {
 
 %hook AVCapturePhotoOutput
 - (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)s delegate:(id)d {
-    if (enabled && lastValidFrame) objc_setAssociatedObject(s, "vcamS", lastValidFrame, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (enabled && snapshotForPhoto) objc_setAssociatedObject(s, "vcamS", snapshotForPhoto, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     %orig;
 }
 %end
@@ -94,7 +100,11 @@ static void setup_vcam_master(void) {
     if (snap) return UIImageJPEGRepresentation(snap, 0.95);
     return %orig;
 }
-- (struct CGImage *)CGImageRepresentation { UIImage *snap = objc_getAssociatedObject([self resolvedSettings], "vcamS"); if (snap) return snap.CGImage; return %orig; }
+- (struct CGImage *)CGImageRepresentation {
+    UIImage *snap = objc_getAssociatedObject([self resolvedSettings], "vcamS");
+    if (snap) return snap.CGImage;
+    return %orig;
+}
 %end
 
 %hook AVCaptureSession
