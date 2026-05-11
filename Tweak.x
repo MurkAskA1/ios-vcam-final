@@ -1,123 +1,88 @@
-// VCAM V121.0: The Stealth Master - Crash Fix & Absolute Clean UI
+// VCAM V122.0: Core Hijack - Direct Signal Replacement (Telegram & Photo Fix)
 #import <UIKit/UIKit.h>
-#import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
-static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
-static UIWindow *vcamWindow = nil;
-static WKWebView *vcamWebView = nil;
-static UIImage *snapshotForPhoto = nil;
+static NSString *vURL = @"http://192.168.1.44:8889/live/stream";
+static UIImage *sharedSnap = nil;
+static NSMutableData *vBuffer = nil;
 
-@interface VCamPassthroughWindow : UIWindow @end
-@implementation VCamPassthroughWindow
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *hitView = [super hitTest:point withEvent:event];
-    // If the hit view is our webview or window, return nil so touch goes to the app below
-    if (hitView == self || [hitView isDescendantOfView:self.rootViewController.view]) return nil;
-    return hitView;
+@interface VCamEngine : NSObject <NSURLSessionDataDelegate> + (instancetype)shared; - (void)start; @end
+@implementation VCamEngine
++ (instancetype)shared { static VCamEngine *s = nil; static dispatch_once_t o; dispatch_once(&o, ^{ s = [[self alloc] init]; }); return s; }
+- (void)start {
+    vBuffer = [NSMutableData data];
+    NSURLSession *s = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration ephemeralSessionConfiguration] delegate:self delegateQueue:[NSOperationQueue mainQueue]];
+    [[s dataTaskWithURL:[NSURL URLWithString:vURL]] resume];
+}
+- (void)URLSession:(NSURLSession *)s dataTask:(NSURLSessionDataTask *)t didReceiveData:(NSData *)d {
+    [vBuffer appendData:d];
+    const unsigned char *b = (const unsigned char *)vBuffer.bytes; NSInteger len = vBuffer.length;
+    for (NSInteger i = 0; i < len - 1; i++) {
+        if (b[i] == 0xFF && b[i+1] == 0xD8) {
+            for (NSInteger j = i + 1; j < len - 1; j++) {
+                if (b[j] == 0xFF && b[j+1] == 0xD9) {
+                    UIImage *img = [UIImage imageWithData:[vBuffer subdataWithRange:NSMakeRange(i, j - i + 2)]];
+                    if (img) sharedSnap = img;
+                    [vBuffer replaceBytesInRange:NSMakeRange(0, j + 2) withBytes:NULL length:0]; return;
+                }
+            }
+        }
+    }
 }
 @end
 
-@interface VCamRootVC : UIViewController @end
-@implementation VCamRootVC
-- (BOOL)prefersStatusBarHidden { return YES; }
-@end
-
-static void setup_web_engine(void) {
-    if (vcamWindow) return;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (vcamWindow) return;
-        
-        vcamWindow = [[VCamPassthroughWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-        vcamWindow.windowLevel = UIWindowLevelAlert + 5000;
-        vcamWindow.userInteractionEnabled = YES;
-        vcamWindow.backgroundColor = [UIColor clearColor];
-        vcamWindow.rootViewController = [[VCamRootVC alloc] init];
-        vcamWindow.hidden = NO;
-        
-        WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
-        config.allowsInlineMediaPlayback = YES;
-        config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
-        
-        vcamWebView = [[WKWebView alloc] initWithFrame:vcamWindow.bounds configuration:config];
-        vcamWebView.backgroundColor = [UIColor clearColor];
-        vcamWebView.opaque = NO;
-        vcamWebView.userInteractionEnabled = NO;
-        vcamWebView.scrollView.scrollEnabled = NO;
-        
-        // IMPROVED CSS: Nuclear option to hide ALL player UI elements
-        NSString *css = @"* { -webkit-tap-highlight-color: transparent !important; } "
-                        "video { width: 100vw !important; height: 100vh !important; object-fit: cover !important; pointer-events: none !important; } "
-                        "button, .controls, .video-controls, .overlay, .play-button, .skip-button, .timer { display: none !important; opacity: 0 !important; visibility: hidden !important; }";
-        
-        WKUserScript *script = [[WKUserScript alloc] initWithSource:[NSString stringWithFormat:@"var style = document.createElement('style'); style.innerHTML = '%@'; document.head.appendChild(style);", css] injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
-        [vcamWebView.configuration.userContentController addUserScript:script];
-        
-        [vcamWindow.rootViewController.view addSubview:vcamWebView];
-        [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
-        
-        [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
-            WKSnapshotConfiguration *sc = [[WKSnapshotConfiguration alloc] init];
-            [vcamWebView takeSnapshotWithConfiguration:sc completionHandler:^(UIImage *img, NSError *err) {
-                if (img) snapshotForPhoto = img;
-            }];
-        }];
-    });
-}
-
+// 1. Hooking the Preview Layer to show our stream INSIDE it
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
-        setup_web_engine();
-        if (vcamWindow) vcamWindow.hidden = NO;
-        
-        // Safe session check to prevent crashes in apps like Telegram
-        AVCaptureSession *s = nil;
-        @try {
-            s = [self session];
-        } @catch (NSException *e) {}
-
-        if (s && vcamWebView) {
-            BOOL f = NO;
-            for (AVCaptureInput *i in [s inputs]) {
-                if ([i isKindOfClass:objc_getClass("AVCaptureDeviceInput")]) {
-                    if (((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; }
-                }
-            }
-            vcamWebView.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
+        [[VCamEngine shared] start];
+        CALayer *targetLayer = nil;
+        for (CALayer *sub in self.sublayers) {
+            if ([sub.name isEqualToString:@"vcamLayer"]) { targetLayer = sub; break; }
         }
-        [self setOpacity:0.01];
+        if (!targetLayer) {
+            targetLayer = [CALayer layer];
+            targetLayer.name = @"vcamLayer";
+            targetLayer.contentsGravity = kCAGravityResizeAspectFill;
+            targetLayer.zPosition = 9999;
+            [self addSublayer:targetLayer];
+        }
+        if (sharedSnap) targetLayer.contents = (__bridge id)sharedSnap.CGImage;
+        targetLayer.frame = self.bounds;
+        
+        // Mirroring logic
+        AVCaptureSession *session = self.session;
+        BOOL isFront = NO;
+        for (AVCaptureInput *input in session.inputs) {
+            if ([input isKindOfClass:[AVCaptureDeviceInput class]]) {
+                if (((AVCaptureDeviceInput *)input).device.position == 2) { isFront = YES; break; }
+            }
+        }
+        targetLayer.transform = isFront ? CATransform3DMakeAffineTransform(CGAffineTransformMakeScale(-1, 1)) : CATransform3DIdentity;
     }
 }
 %end
 
-%hook AVCapturePhotoOutput
-- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)s delegate:(id)d {
-    if (enabled && snapshotForPhoto) objc_setAssociatedObject(s, "vcamS", snapshotForPhoto, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    %orig;
-}
-%end
-
+// 2. Direct Photo Hijack - replacing the captured image data
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    UIImage *snap = objc_getAssociatedObject([self resolvedSettings], "vcamS");
-    if (snap) return UIImageJPEGRepresentation(snap, 0.95);
+    if (enabled && sharedSnap) return UIImageJPEGRepresentation(sharedSnap, 0.95);
     return %orig;
 }
 - (struct CGImage *)CGImageRepresentation {
-    UIImage *snap = objc_getAssociatedObject([self resolvedSettings], "vcamS");
-    if (snap) return snap.CGImage;
+    if (enabled && sharedSnap) return sharedSnap.CGImage;
     return %orig;
 }
 %end
 
+// 3. Ensuring stability in session-based apps like Telegram
 %hook AVCaptureSession
-- (void)stopRunning {
+- (void)startRunning {
+    [[VCamEngine shared] start];
     %orig;
-    if (vcamWindow) vcamWindow.hidden = YES;
 }
 %end
 
@@ -125,6 +90,6 @@ static void setup_web_engine(void) {
     NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
     if (p) {
         enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
-        if (p[@"rtspURL"]) streamURL = [p[@"rtspURL"] stringByReplacingOccurrencesOfString:@"/index.m3u8" withString:@""];
+        if (p[@"rtspURL"]) vURL = [p[@"rtspURL"] stringByReplacingOccurrencesOfString:@"/index.m3u8" withString:@""];
     }
 }
