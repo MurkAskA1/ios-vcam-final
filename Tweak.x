@@ -1,4 +1,4 @@
-// VCAM V98.0: The 11KB Legacy Restoration - Zero Latency Engine
+// VCAM V99.0: Blue Screen Hero - Pure Original Logic Restoration
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreImage/CoreImage.h>
@@ -14,10 +14,9 @@ static AVPlayer *vcamPlayer = nil;
 static AVPlayerLayer *vcamLayer = nil;
 static AVPlayerItemVideoOutput *vcamVideoOutput = nil;
 static UIImage *lastValidUIImage = nil;
-static CIImage *lastValidCIFrame = nil;
 
 void vcam_log(NSString *message) {
-    NSString *logPath = @"/var/mobile/Documents/vcam_LEGACY.log";
+    NSString *logPath = @"/var/mobile/Documents/vcam_ORIGINAL.log";
     NSString *formatted = [NSString stringWithFormat:@"%@\n", message];
     NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:logPath];
     if (fh) { [fh seekToEndOfFile]; [fh writeData:[formatted dataUsingEncoding:NSUTF8StringEncoding]]; [fh closeFile]; }
@@ -26,7 +25,7 @@ void vcam_log(NSString *message) {
 
 void update_vcam_status(NSString *status, UIColor *color) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (statusLabel) { statusLabel.text = [NSString stringWithFormat:@"VCAM LEGACY: %@", status]; statusLabel.textColor = color; }
+        if (statusLabel) { statusLabel.text = [NSString stringWithFormat:@"VCAM ORIGINAL: %@", status]; statusLabel.textColor = color; }
     });
 }
 
@@ -39,9 +38,9 @@ void setup_status_bar(void) {
         overlayWindow.backgroundColor = [UIColor clearColor];
         overlayWindow.hidden = NO;
         statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 40, [UIScreen mainScreen].bounds.size.width - 20, 25)];
-        statusLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+        statusLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
         statusLabel.textColor = [UIColor whiteColor];
-        statusLabel.font = [UIFont boldSystemFontOfSize:10];
+        statusLabel.font = [UIFont boldSystemFontOfSize:11];
         statusLabel.layer.cornerRadius = 6;
         statusLabel.clipsToBounds = YES;
         statusLabel.textAlignment = NSTextAlignmentCenter;
@@ -49,16 +48,15 @@ void setup_status_bar(void) {
     });
 }
 
-@interface VCamEngine : NSObject + (void)captureFrame; @end
+@interface VCamEngine : NSObject + (void)tick; @end
 @implementation VCamEngine
-+ (void)captureFrame {
++ (void)tick {
     if (!vcamVideoOutput || !vcamPlayer.currentItem) return;
-    CMTime itemTime = [vcamPlayer.currentItem currentTime];
-    CVPixelBufferRef pb = [vcamVideoOutput copyPixelBufferForItemTime:itemTime itemTimeForDisplay:NULL];
+    CMTime t = [vcamPlayer.currentItem currentTime];
+    CVPixelBufferRef pb = [vcamVideoOutput copyPixelBufferForItemTime:t itemTimeForDisplay:NULL];
     if (pb) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
         if (ci) {
-            lastValidCIFrame = ci;
             CIContext *ctx = [CIContext contextWithOptions:nil];
             CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
             if (cg) { lastValidUIImage = [UIImage imageWithCGImage:cg]; CGImageRelease(cg); }
@@ -68,77 +66,34 @@ void setup_status_bar(void) {
 }
 @end
 
-static CADisplayLink *legacyLink = nil;
-@interface VCamLegacyLink : NSObject + (void)tick; @end
-@implementation VCamLegacyLink
-+ (void)tick { [VCamEngine captureFrame]; }
-@end
-
-@interface VCamFreezeLayer : CALayer @end
-@implementation VCamFreezeLayer
-- (void)display {
-    if (!lastValidCIFrame) return;
-    CGImageRef cg = [[CIContext contextWithOptions:nil] createCGImage:lastValidCIFrame fromRect:lastValidCIFrame.extent];
-    if (cg) { self.contents = (__bridge id)cg; CGImageRelease(cg); }
-}
-@end
-
-static VCamFreezeLayer *freezeLayer = nil;
-static void show_freeze(CALayer *parent, CGRect bounds) {
-    if (!freezeLayer) { freezeLayer = [VCamFreezeLayer layer]; freezeLayer.zPosition = 9998; freezeLayer.contentsGravity = kCAGravityResizeAspectFill; }
-    freezeLayer.frame = bounds;
-    if (freezeLayer.superlayer != parent) [parent addSublayer:freezeLayer];
-    [freezeLayer setNeedsDisplay];
-}
-
-static void setup_legacy_player(NSString *u) {
+static void setup_player(NSString *u) {
     if (vcamPlayer) { [vcamPlayer pause]; [vcamLayer removeFromSuperlayer]; vcamPlayer = nil; vcamLayer = nil; }
     NSURL *url = [NSURL URLWithString:u];
-    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
-    AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
-    item.automaticallyPreservesTimeOffsetFromLive = YES;
-    item.configuredTimeOffsetFromLive = kCMTimeZero;
-    
+    AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
     vcamVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
     [item addOutput:vcamVideoOutput];
-    
     vcamPlayer = [AVPlayer playerWithPlayerItem:item];
-    vcamPlayer.automaticallyWaitsToMinimizeStalling = NO;
     vcamPlayer.actionAtItemEnd = AVPlayerActionAtItemEndNone;
-    
     vcamLayer = [AVPlayerLayer playerLayerWithPlayer:vcamPlayer];
     vcamLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
     [vcamPlayer play];
-    
-    if (!legacyLink) {
-        legacyLink = [CADisplayLink displayLinkWithTarget:[VCamLegacyLink class] selector:@selector(tick)];
-        [legacyLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
-    }
-    vcam_log(@"Legacy Player Initialized");
+    CADisplayLink *link = [CADisplayLink displayLinkWithTarget:[VCamEngine class] selector:@selector(tick)];
+    [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    vcam_log(@"Original Player Started");
 }
 
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (!enabled) return;
-    if (!vcamPlayer) setup_legacy_player(rtspURL);
+    if (!vcamPlayer) setup_player(rtspURL);
     if (vcamLayer && vcamLayer.superlayer != self) [self addSublayer:vcamLayer];
     if (vcamLayer) {
         vcamLayer.frame = self.bounds; vcamLayer.zPosition = 9999;
         AVCaptureSession *s = self.session; BOOL f = NO;
         for (AVCaptureInput *i in s.inputs) { if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == AVCaptureDevicePositionFront) { f = YES; break; } }
         vcamLayer.transform = f ? CATransform3DMakeAffineTransform(CGAffineTransformMakeScale(-1, 1)) : CATransform3DIdentity;
-        if (freezeLayer) freezeLayer.transform = vcamLayer.transform;
-        
-        BOOL ready = vcamPlayer.status == AVPlayerStatusReadyToPlay && vcamPlayer.currentItem.status == AVPlayerItemStatusReadyToPlay;
-        if (!ready) {
-            if (lastValidCIFrame) { show_freeze(self, self.bounds); update_vcam_status(@"SIGNAL LOST", [UIColor orangeColor]); }
-            else { vcamLayer.backgroundColor = [UIColor blackColor].CGColor; update_vcam_status(@"CONNECTING LEGACY...", [UIColor yellowColor]); }
-        } else {
-            if (freezeLayer) [freezeLayer removeFromSuperlayer];
-            vcamLayer.backgroundColor = [UIColor clearColor].CGColor;
-            update_vcam_status(f ? @"LEGACY ACTIVE (FRONT)" : @"LEGACY ACTIVE", [UIColor greenColor]);
-        }
+        update_vcam_status(f ? @"ORIGINAL (FRONT)" : @"ORIGINAL ACTIVE", [UIColor greenColor]);
     }
 }
 %end
@@ -153,7 +108,7 @@ static void setup_legacy_player(NSString *u) {
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
     UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamSnapshot");
-    if (snap) return UIImageJPEGRepresentation(snap, 0.95);
+    if (snap) return UIImageJPEGRepresentation(snap, 0.9);
     return %orig;
 }
 - (CGImageRef)CGImageRepresentation { UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamSnapshot"); if (snap) return snap.CGImage; return %orig; }
@@ -166,5 +121,5 @@ static void setup_legacy_player(NSString *u) {
 %ctor {
     NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
     if (p) { enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES; if (p[@"rtspURL"]) rtspURL = p[@"rtspURL"]; }
-    vcam_log(@"VCAM V98.0 Legacy Ready");
+    vcam_log(@"VCAM V99.0 Original Ready");
 }
