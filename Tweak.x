@@ -1,4 +1,4 @@
-// VCAM V153.0: The Ultimate Stealth - WebView Integration with Touch Passthrough
+// VCAM V154.0: The Final Stealth Strike - Raw Text Fix & Perfect UI
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -7,9 +7,9 @@
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
-static UIImage *sharedSnapshot = nil;
+static UIImage *snapshotForHijack = nil;
 
-static void setup_vcam_stealth(UIView *parent) {
+static void setup_vcam_final_boss(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -19,21 +19,24 @@ static void setup_vcam_stealth(UIView *parent) {
     
     vcamWebView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     vcamWebView.backgroundColor = [UIColor blackColor];
-    vcamWebView.opaque = YES;
-    vcamWebView.userInteractionEnabled = NO;
+    vcamWebView.userInteractionEnabled = NO; // Touches pass through to native buttons
     vcamWebView.scrollView.scrollEnabled = NO;
 
-    NSString *js = @"var style = document.createElement('style'); style.innerHTML = 'body, html, img, video { margin: 0 !important; padding: 0 !important; width: 100vw !important; height: 100vh !important; object-fit: cover !important; background: black !important; overflow: hidden !important; } .vjs-control-bar, .vjs-big-play-button, button, header, footer, .controls { display: none !important; }'; document.head.appendChild(style);";
-    WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
-    [config.userContentController addUserScript:script];
-
+    // Direct load to act exactly like Chrome
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
-    [parent insertSubview:vcamWebView atIndex:0];
 
+    // Inject CSS to hide player UI
+    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; outline: none !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black; overflow: hidden; } .vjs-control-bar, .vjs-big-play-button, button, header, footer, .controls, .play-button { display: none !important; }'; document.head.appendChild(s);";
+    WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
+    [vcamWebView.configuration.userContentController addUserScript:script];
+
+    [parent insertSubview:vcamWebView atIndex:0]; // Stay BEHIND native buttons
+
+    // Snapshot loop for Photo Hijack
     [NSTimer scheduledTimerWithTimeInterval:0.4 repeats:YES block:^(NSTimer *t) {
         if (!enabled) return;
         [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
-            if (img) sharedSnapshot = img;
+            if (img) snapshotForHijack = img;
         }];
     }];
 }
@@ -45,7 +48,7 @@ static void setup_vcam_stealth(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_stealth(p);
+            setup_vcam_final_boss(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             
@@ -57,7 +60,7 @@ static void setup_vcam_stealth(UIView *parent) {
                 }
             }
             vcamWebView.transform = isFront ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
-            [self setOpacity:0.0];
+            [self setOpacity:0.0]; // Hide real lens
         }
     }
 }
@@ -65,17 +68,17 @@ static void setup_vcam_stealth(UIView *parent) {
 
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && sharedSnapshot) return UIImageJPEGRepresentation(sharedSnapshot, 0.95);
+    if (enabled && snapshotForHijack) return UIImageJPEGRepresentation(snapshotForHijack, 0.95);
     return %orig;
 }
 
 - (struct CGImage *)CGImageRepresentation {
-    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
+    if (enabled && snapshotForHijack) return snapshotForHijack.CGImage;
     return %orig;
 }
 
 - (struct CGImage *)previewCGImageRepresentation {
-    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
+    if (enabled && snapshotForHijack) return snapshotForHijack.CGImage;
     return %orig;
 }
 %end
