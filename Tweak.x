@@ -1,4 +1,4 @@
-// VCAM V174.0: The KYC Ultimate Fix - No More Leaks
+// VCAM V175.0: The Total Eraser - No Thumbnail Leaks
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -10,7 +10,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v174(UIView *parent) {
+static void setup_vcam_v175(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -22,7 +22,6 @@ static void setup_vcam_v174(UIView *parent) {
     vcamWebView.backgroundColor = [UIColor blackColor];
     vcamWebView.userInteractionEnabled = NO;
     vcamWebView.scrollView.scrollEnabled = NO;
-    vcamWebView.opaque = NO;
 
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
 
@@ -40,6 +39,42 @@ static void setup_vcam_v174(UIView *parent) {
     }];
 }
 
+// 1. GLOBAL UIIMAGE CREATION HIJACK (Aggressive threshold: 30px)
+%hook UIImage
++ (UIImage *)imageWithCGImage:(struct CGImage *)cgImage {
+    if (enabled && sharedSnapshot && cgImage) {
+        if (CGImageGetWidth(cgImage) > 30) return sharedSnapshot;
+    }
+    return %orig;
+}
++ (UIImage *)imageWithData:(NSData *)data {
+    if (enabled && sharedSnapshot && data.length > 5000) return sharedSnapshot;
+    return %orig;
+}
+%end
+
+// 2. DATA REPRESENTATION HIJACK (No original bytes in file)
+FOUNDATION_EXTERN NSData *UIImageJPEGRepresentation(UIImage *image, CGFloat compressionQuality);
+%hookf(NSData *, UIImageJPEGRepresentation, UIImage *image, CGFloat compressionQuality) {
+    if (enabled && sharedSnapshot && image != sharedSnapshot && image.size.width > 30) {
+        return %orig(sharedSnapshot, compressionQuality);
+    }
+    return %orig(image, compressionQuality);
+}
+
+// 3. DATABASE IMAGE MANAGER HIJACK (For gallery icons)
+%hook PHImageManager
+- (int)requestImageForAsset:(id)asset targetSize:(struct CGSize)targetSize contentMode:(int)contentMode options:(id)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
+    if (enabled && sharedSnapshot && resultHandler) {
+        return %orig(asset, targetSize, contentMode, options, ^(UIImage *result, NSDictionary *info) {
+            resultHandler(sharedSnapshot, info);
+        });
+    }
+    return %orig;
+}
+%end
+
+// 4. PREVIEW AND LAYER HIJACK
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
@@ -47,61 +82,12 @@ static void setup_vcam_v174(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v174(p);
+            setup_vcam_v175(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             [self setOpacity:0.0];
         }
     }
-}
-%end
-
-%hook AVCapturePhoto
-- (NSData *)fileDataRepresentation {
-    if (enabled && sharedSnapshot) return UIImageJPEGRepresentation(sharedSnapshot, 0.95);
-    return %orig;
-}
-- (struct CGImage *)CGImageRepresentation {
-    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
-    return %orig;
-}
-- (struct CGImage *)previewCGImageRepresentation {
-    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
-    return %orig;
-}
-%end
-
-// HIJACKING THE GALLERY ICON (CAMImageWell)
-%hook CAMImageWell
-- (void)setThumbnailImage:(UIImage *)image {
-    if (enabled && sharedSnapshot) %orig(sharedSnapshot);
-    else %orig;
-}
-- (void)setPlaceholderImage:(UIImage *)image {
-    if (enabled && sharedSnapshot) %orig(sharedSnapshot);
-    else %orig;
-}
-%end
-
-// BLOCKING REAL VIDEO RECORDING (Banking Liveness)
-%hook AVCaptureMovieFileOutput
-- (void)startRecordingToOutputFileURL:(NSURL *)outputFileURL recordingDelegate:(id)delegate {
-    if (enabled) {
-        // System will still try to record, but we want it to fail or record our fake buffer
-        %orig;
-    } else {
-        %orig;
-    }
-}
-%end
-
-// FORCE SYSTEM TO USE SHARED SNAPSHOT FOR ALL UI CREATION
-%hook UIImage
-+ (UIImage *)imageWithCGImage:(struct CGImage *)cgImage {
-    if (enabled && sharedSnapshot && cgImage) {
-        if (CGImageGetWidth(cgImage) > 100) return sharedSnapshot;
-    }
-    return %orig;
 }
 %end
 
