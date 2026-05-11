@@ -1,4 +1,4 @@
-// VCAM V172.0: The Database Ghost - PHImageManager and UI Hijack
+// VCAM V173.0: The Database Ghost Fix - PHImageManager and Global UI Hijack
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -10,7 +10,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v172(UIView *parent) {
+static void setup_vcam_v173(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -39,20 +39,7 @@ static void setup_vcam_v172(UIView *parent) {
     }];
 }
 
-// 1. GLOBAL IMAGE MANAGER HIJACK (PHImageManager)
-%hook PHImageManager
-- (PHImageRequestID)requestImageForAsset:(PHAsset *)asset targetSize:(CGSize)targetSize contentMode:(PHImageContentMode)contentMode options:(PHImageRequestOptions *)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
-    if (enabled && sharedSnapshot) {
-        PHImageRequestID requestID = %orig(asset, targetSize, contentMode, options, ^(UIImage *result, NSDictionary *info) {
-            resultHandler(sharedSnapshot, info);
-        });
-        return requestID;
-    }
-    return %orig;
-}
-%end
-
-// 2. UI IMAGE CREATION HIJACK (Lower threshold)
+// 1. UI IMAGE CREATION HIJACK (Lower threshold)
 %hook UIImage
 + (UIImage *)imageWithCGImage:(struct CGImage *)cgImage {
     if (enabled && sharedSnapshot && cgImage) {
@@ -62,7 +49,7 @@ static void setup_vcam_v172(UIView *parent) {
 }
 %end
 
-// 3. GALLERY WELL (CAMImageWell) RE-ENFORCED
+// 2. GALLERY WELL (CAMImageWell) RE-ENFORCED
 %hook CAMImageWell
 - (void)setThumbnailImage:(UIImage *)image {
     if (enabled && sharedSnapshot) %orig(sharedSnapshot);
@@ -70,7 +57,7 @@ static void setup_vcam_v172(UIView *parent) {
 }
 %end
 
-// 4. PREVIEW AND LAYER HIJACK
+// 3. PREVIEW AND LAYER HIJACK
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
@@ -78,12 +65,24 @@ static void setup_vcam_v172(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v172(p);
+            setup_vcam_v173(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             [self setOpacity:0.0];
         }
     }
+}
+%end
+
+// 4. DATABASE HIJACK (Safe Syntax)
+%hook PHImageManager
+- (int)requestImageForAsset:(id)asset targetSize:(struct CGSize)targetSize contentMode:(int)contentMode options:(id)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
+    if (enabled && sharedSnapshot) {
+        return %orig(asset, targetSize, contentMode, options, ^(UIImage *result, NSDictionary *info) {
+            resultHandler(sharedSnapshot, info);
+        });
+    }
+    return %orig;
 }
 %end
 
