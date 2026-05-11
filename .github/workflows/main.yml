@@ -1,7 +1,6 @@
 name: VCAM Build
 on: [push, workflow_dispatch]
-
-jobs: 
+jobs:
   build:
     runs-on: macos-14
     steps:
@@ -11,14 +10,11 @@ jobs:
           git clone --recursive https://github.com/theos/theos.git ~/theos
           echo "THEOS=~/theos" >> $GITHUB_ENV
       - name: Install dependencies
-        run: |
-          brew install ldid xz
+        run: brew install ldid xz
       - name: Install SDK
         run: |
-          curl -LO https://github.com/theos/sdks/archive/master.zip
-          unzip master.zip
-          mv sdks-master/*.sdk ~/theos/sdks/
-          rm -rf master.zip sdks-master
+          mkdir -p ~/theos/sdks
+          curl -L https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz | tar -xJ -C ~/theos/sdks/
       - name: Build
         run: |
           export THEOS=~/theos
