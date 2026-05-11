@@ -1,4 +1,4 @@
-// VCAM V112.0: The Window Master - Extreme Layer Override
+// VCAM V113.0: Window Diagnostics & Hybrid Fallback Engine
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
@@ -10,18 +10,22 @@ static AVPlayer *vcamPlayer = nil;
 static AVPlayerLayer *vcamLayer = nil;
 static UIImage *lastVFrame = nil;
 static AVPlayerItemVideoOutput *vOutput = nil;
+static UILabel *diagHUD = nil;
 
 void v_log(NSString *m) {
     NSString *p = @"/var/mobile/Documents/vcam_WINDOW.log";
     NSString *f = [NSString stringWithFormat:@"[%@] %@\n", [NSDate date], m];
-    [[f dataUsingEncoding:NSUTF8StringEncoding] writeToFile:p atomically:NO];
+    NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:p];
+    if (h) { [h seekToEndOfFile]; [h writeData:[f dataUsingEncoding:NSUTF8StringEncoding]]; [h closeFile]; }
+    else { [f writeToFile:p atomically:YES encoding:NSUTF8StringEncoding error:nil]; }
 }
 
 @interface VCamFrameLink : NSObject + (void)tick; @end
 @implementation VCamFrameLink
 + (void)tick {
     if (!vOutput || !vcamPlayer.currentItem) return;
-    CVPixelBufferRef pb = [vOutput copyPixelBufferForItemTime:[vcamPlayer.currentItem currentTime] itemTimeForDisplay:NULL];
+    CMTime t = [vcamPlayer.currentItem currentTime];
+    CVPixelBufferRef pb = [vOutput copyPixelBufferForItemTime:t itemTimeForDisplay:NULL];
     if (pb) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
         CIContext *ctx = [CIContext contextWithOptions:nil];
@@ -41,7 +45,17 @@ static void setup_master_window(void) {
         vcamVideoWindow.userInteractionEnabled = NO;
         vcamVideoWindow.hidden = NO;
         
+        diagHUD = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, [UIScreen mainScreen].bounds.size.width, 40)];
+        diagHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+        diagHUD.textColor = [UIColor whiteColor];
+        diagHUD.font = [UIFont boldSystemFontOfSize:10];
+        diagHUD.textAlignment = NSTextAlignmentCenter;
+        diagHUD.numberOfLines = 2;
+        diagHUD.text = [NSString stringWithFormat:@"WINDOW ACTIVE\nSTREAM: %@", streamURL];
+        [vcamVideoWindow addSubview:diagHUD];
+        
         vcamPlayer = [AVPlayer playerWithURL:[NSURL URLWithString:streamURL]];
+        vcamPlayer.automaticallyWaitsToMinimizeStalling = NO;
         vcamLayer = [AVPlayerLayer playerLayerWithPlayer:vcamPlayer];
         vcamLayer.frame = vcamVideoWindow.bounds;
         vcamLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
@@ -53,7 +67,7 @@ static void setup_master_window(void) {
         
         CADisplayLink *link = [CADisplayLink displayLinkWithTarget:[VCamFrameLink class] selector:@selector(tick)];
         [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
-        v_log(@"Master Window Created");
+        v_log(@"Master Window & HUD Created");
     });
 }
 
@@ -64,6 +78,10 @@ static void setup_master_window(void) {
         setup_master_window();
         vcamVideoWindow.hidden = NO;
         self.opacity = 0.0;
+        if (vcamPlayer.status == AVPlayerStatusReadyToPlay) {
+            diagHUD.text = @"STREAMING ACTIVE";
+            diagHUD.textColor = [UIColor greenColor];
+        }
     }
 }
 %end
@@ -78,7 +96,7 @@ static void setup_master_window(void) {
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
     UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamS");
-    if (snap) return UIImageJPEGRepresentation(snap, 0.95);
+    if (snap) { v_log(@"Photo Hijack Success"); return UIImageJPEGRepresentation(snap, 0.95); }
     return %orig;
 }
 - (CGImageRef)CGImageRepresentation { UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamS"); if (snap) return snap.CGImage; return %orig; }
@@ -94,5 +112,5 @@ static void setup_master_window(void) {
         enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
         if (p[@"rtspURL"]) streamURL = p[@"rtspURL"];
     }
-    v_log(@"VCAM V112.0 Master Loaded");
+    v_log(@"VCAM V113.0 Loaded");
 }
