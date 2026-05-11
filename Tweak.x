@@ -1,4 +1,4 @@
-// VCAM V154.0: The Final Stealth Strike - Raw Text Fix & Perfect UI
+// VCAM V155.0: The Final Stealth Strike - Clean Text Fix & Perfect UI
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -19,20 +19,17 @@ static void setup_vcam_final_boss(UIView *parent) {
     
     vcamWebView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     vcamWebView.backgroundColor = [UIColor blackColor];
-    vcamWebView.userInteractionEnabled = NO; // Touches pass through to native buttons
+    vcamWebView.userInteractionEnabled = NO;
     vcamWebView.scrollView.scrollEnabled = NO;
 
-    // Direct load to act exactly like Chrome
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
 
-    // Inject CSS to hide player UI
     NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; outline: none !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black; overflow: hidden; } .vjs-control-bar, .vjs-big-play-button, button, header, footer, .controls, .play-button { display: none !important; }'; document.head.appendChild(s);";
     WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
     [vcamWebView.configuration.userContentController addUserScript:script];
 
-    [parent insertSubview:vcamWebView atIndex:0]; // Stay BEHIND native buttons
+    [parent insertSubview:vcamWebView atIndex:0];
 
-    // Snapshot loop for Photo Hijack
     [NSTimer scheduledTimerWithTimeInterval:0.4 repeats:YES block:^(NSTimer *t) {
         if (!enabled) return;
         [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
@@ -60,7 +57,7 @@ static void setup_vcam_final_boss(UIView *parent) {
                 }
             }
             vcamWebView.transform = isFront ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
-            [self setOpacity:0.0]; // Hide real lens
+            [self setOpacity:0.0];
         }
     }
 }
