@@ -1,15 +1,16 @@
-// VCAM V169.0: The System Ghost - Video & Gallery Perfection
+// VCAM V170.0: The Final KYC Shield - Global System Hijack
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
+#import <CoreMedia/CoreMedia.h>
 
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v169(UIView *parent) {
+static void setup_vcam_v170(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -39,6 +40,36 @@ static void setup_vcam_v169(UIView *parent) {
     }];
 }
 
+// 1. HIJACKING THE GALLERY CIRCLE (CAMImageWell)
+%hook CAMImageWell
+- (void)setThumbnailImage:(UIImage *)image {
+    if (enabled && sharedSnapshot) %orig(sharedSnapshot);
+    else %orig;
+}
+%end
+
+// 2. HIJACKING SYSTEM SNAPSHOT SERVICE (The "Imprint" source)
+%hook CAMSnapshotService
+- (void)snapshotWithConfiguration:(id)config completionHandler:(void(^)(UIImage *image, NSError *error))handler {
+    if (enabled && sharedSnapshot) {
+        handler(sharedSnapshot, nil);
+    } else {
+        %orig;
+    }
+}
+%end
+
+// 3. HIJACKING ALL LARGE UIIMAGE CREATION (Banking Apps)
+%hook UIImage
++ (UIImage *)imageWithCGImage:(struct CGImage *)cgImage {
+    if (enabled && sharedSnapshot && cgImage) {
+        if (CGImageGetWidth(cgImage) > 400) return sharedSnapshot;
+    }
+    return %orig;
+}
+%end
+
+// 4. PREVIEW AND LAYER HIJACK
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
@@ -46,7 +77,7 @@ static void setup_vcam_v169(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v169(p);
+            setup_vcam_v170(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             [self setOpacity:0.0];
@@ -55,11 +86,8 @@ static void setup_vcam_v169(UIView *parent) {
 }
 %end
 
+// 5. PHOTO RESULT HIJACK
 %hook AVCapturePhoto
-- (NSData *)fileDataRepresentation {
-    if (enabled && sharedSnapshot) return UIImageJPEGRepresentation(sharedSnapshot, 0.95);
-    return %orig;
-}
 - (struct CGImage *)CGImageRepresentation {
     if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
     return %orig;
@@ -68,36 +96,7 @@ static void setup_vcam_v169(UIView *parent) {
     if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
     return %orig;
 }
-- (struct CGImage *)embeddedThumbnailPhotoRepresentation {
-    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
-    return %orig;
-}
 %end
-
-// Gallery Well Fix (The small circle)
-%hook CAMImageWell
-- (void)setThumbnailImage:(UIImage *)image {
-    if (enabled && sharedSnapshot) %orig(sharedSnapshot);
-    else %orig;
-}
-%end
-
-// Video Hijack for Recording and Liveness
-%hook AVCaptureVideoDataOutput
-- (void)setSampleBufferDelegate:(id)delegate queue:(dispatch_queue_t)queue {
-    %orig;
-}
-%end
-
-// Absolute Gallery Save Hijack (No more leaking original photo)
-FOUNDATION_EXTERN void UIImageWriteToSavedPhotosAlbum(UIImage *image, id completionTarget, SEL completionSelector, void *contextInfo);
-%hookf(void, UIImageWriteToSavedPhotosAlbum, UIImage *image, id completionTarget, SEL completionSelector, void *contextInfo) {
-    if (enabled && sharedSnapshot) {
-        %orig(sharedSnapshot, completionTarget, completionSelector, contextInfo);
-    } else {
-        %orig(image, completionTarget, completionSelector, contextInfo);
-    }
-}
 
 %ctor {
     NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
