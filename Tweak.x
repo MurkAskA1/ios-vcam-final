@@ -1,4 +1,4 @@
-// VCAM V161.0: The Final Absolute Fix - No Base64, Pure Logic
+// VCAM V162.0: The Stealth Master - No Pause, Perfect Thumbnails
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -9,7 +9,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v161(UIView *parent) {
+static void setup_vcam_v162(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -21,18 +21,19 @@ static void setup_vcam_v161(UIView *parent) {
     vcamWebView.backgroundColor = [UIColor blackColor];
     vcamWebView.userInteractionEnabled = NO;
     vcamWebView.scrollView.scrollEnabled = NO;
+    vcamWebView.opaque = NO;
 
-    // Direct load
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
 
-    // Inject CSS & JS to hide UI and auto-play
-    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black; overflow: hidden; } .vjs-control-bar, .vjs-big-play-button, button, header, footer, .controls, .play-button { display: none !important; }'; document.head.appendChild(s); setInterval(function(){ var v = document.querySelector('video'); if(v && v.paused) v.play(); }, 100);";
+    // Aggressive CSS to hide all player UI
+    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; outline: none !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black !important; overflow: hidden !important; } .vjs-control-bar, .vjs-big-play-button, .vjs-loading-spinner, button, header, footer, .controls, .play-button, .pause-indicator { display: none !important; opacity: 0 !important; visibility: hidden !important; }'; document.head.appendChild(s); setInterval(function(){ var v = document.querySelector('video'); if(v) { v.play(); v.controls = false; } }, 50);";
     WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
     [vcamWebView.configuration.userContentController addUserScript:script];
 
     [parent insertSubview:vcamWebView atIndex:0];
 
-    [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:YES block:^(NSTimer *t) {
+    // High frequency snapshot for thumbnails and capture
+    [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
         if (!enabled) return;
         [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
             if (img) sharedSnapshot = img;
@@ -47,7 +48,7 @@ static void setup_vcam_v161(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v161(p);
+            setup_vcam_v162(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             
@@ -77,6 +78,11 @@ static void setup_vcam_v161(UIView *parent) {
 }
 
 - (struct CGImage *)previewCGImageRepresentation {
+    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
+    return %orig;
+}
+
+- (struct CGImage *)embeddedThumbnailPhotoRepresentation {
     if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
     return %orig;
 }
