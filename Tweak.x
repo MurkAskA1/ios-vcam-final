@@ -1,4 +1,4 @@
-// VCAM V96.0: Stable Restoration & Photo Hijack Fix
+// VCAM V97.0: The Ultimate Restoration - Back to the Roots
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreImage/CoreImage.h>
@@ -13,10 +13,11 @@ static UIWindow *overlayWindow = nil;
 static AVPlayer *vcamPlayer = nil;
 static AVPlayerLayer *vcamLayer = nil;
 static AVPlayerItemVideoOutput *vcamVideoOutput = nil;
+static CIImage *lastValidFrame = nil;
 static UIImage *lastValidUIImage = nil;
 
 void vcam_log(NSString *message) {
-    NSString *logPath = @"/var/mobile/Documents/vcam_DEBUG.log";
+    NSString *logPath = @"/var/mobile/Documents/vcam_DEBUGRoot.log";
     NSString *formatted = [NSString stringWithFormat:@"%@\n", message];
     NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:logPath];
     if (fh) { [fh seekToEndOfFile]; [fh writeData:[formatted dataUsingEncoding:NSUTF8StringEncoding]]; [fh closeFile]; }
@@ -27,7 +28,6 @@ void update_vcam_status(NSString *status, UIColor *color) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (statusLabel) { statusLabel.text = [NSString stringWithFormat:@"VCAM: %@", status]; statusLabel.textColor = color; }
     });
-    vcam_log(status);
 }
 
 void setup_status_bar(void) {
@@ -60,7 +60,7 @@ static CADisplayLink *frameGrabLink = nil;
     if (pb) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
         if (ci) {
-            CIContext *ctx = [CIContext contextWithOptions:nil];
+            lastValidFrame = ci; CIContext *ctx = [CIContext contextWithOptions:nil];
             CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
             if (cg) { lastValidUIImage = [UIImage imageWithCGImage:cg]; CGImageRelease(cg); }
         }
@@ -69,10 +69,27 @@ static CADisplayLink *frameGrabLink = nil;
 }
 @end
 
+@interface VCamFreezeLayer : CALayer @end
+@implementation VCamFreezeLayer
+- (void)display {
+    if (!lastValidFrame) return;
+    CGImageRef cg = [[CIContext contextWithOptions:nil] createCGImage:lastValidFrame fromRect:lastValidFrame.extent];
+    if (cg) { self.contents = (__bridge id)cg; CGImageRelease(cg); }
+}
+@end
+
+static VCamFreezeLayer *freezeLayer = nil;
+static void show_freeze(CALayer *parent, CGRect bounds) {
+    if (!freezeLayer) { freezeLayer = [VCamFreezeLayer layer]; freezeLayer.zPosition = 9998; freezeLayer.contentsGravity = kCAGravityResizeAspectFill; }
+    freezeLayer.frame = bounds;
+    if (freezeLayer.superlayer != parent) [parent addSublayer:freezeLayer];
+    [freezeLayer setNeedsDisplay];
+}
+
 static void setup_player(NSString *u) {
     if (vcamPlayer) { [vcamPlayer pause]; [vcamLayer removeFromSuperlayer]; vcamPlayer = nil; vcamLayer = nil; }
     NSURL *url = [NSURL URLWithString:u];
-    update_vcam_status([NSString stringWithFormat:@"STABLE CONN [%@]...", url.host], [UIColor yellowColor]);
+    update_vcam_status(@"ROOTS CONNECTING...", [UIColor yellowColor]);
     AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
     vcamVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
     [item addOutput:vcamVideoOutput];
@@ -94,9 +111,17 @@ static void setup_player(NSString *u) {
         AVCaptureSession *s = self.session; BOOL f = NO;
         for (AVCaptureInput *i in s.inputs) { if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == AVCaptureDevicePositionFront) { f = YES; break; } }
         vcamLayer.transform = f ? CATransform3DMakeAffineTransform(CGAffineTransformMakeScale(-1, 1)) : CATransform3DIdentity;
+        if (freezeLayer) freezeLayer.transform = vcamLayer.transform;
+        
         BOOL ready = vcamPlayer.status == AVPlayerStatusReadyToPlay && vcamPlayer.currentItem.status == AVPlayerItemStatusReadyToPlay;
-        if (!ready) { vcamLayer.backgroundColor = [UIColor blackColor].CGColor; update_vcam_status(@"CONNECTING...", [UIColor yellowColor]); }
-        else { vcamLayer.backgroundColor = [UIColor clearColor].CGColor; update_vcam_status(f ? @"STREAMING (FRONT)" : @"STREAMING ACTIVE", [UIColor greenColor]); }
+        if (!ready) {
+             if (lastValidFrame) { show_freeze(self, self.bounds); update_vcam_status(@"SIGNAL DROPPED - FREEZING", [UIColor orangeColor]); }
+             else { vcamLayer.backgroundColor = [UIColor blackColor].CGColor; update_vcam_status(@"CONNECTING...", [UIColor yellowColor]); }
+        } else {
+             if (freezeLayer) [freezeLayer removeFromSuperlayer];
+             vcamLayer.backgroundColor = [UIColor clearColor].CGColor;
+             update_vcam_status(f ? @"ROOTS (FRONT)" : @"ROOTS ACTIVE", [UIColor greenColor]);
+        }
     }
 }
 %end
@@ -124,5 +149,5 @@ static void setup_player(NSString *u) {
 %ctor {
     NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
     if (p) { enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES; if (p[@"rtspURL"]) rtspURL = p[@"rtspURL"]; }
-    vcam_log(@"VCAM V96.0 Restoration Loaded");
+    vcam_log(@"VCAM V97.0 Roots Restoration Loaded");
 }
