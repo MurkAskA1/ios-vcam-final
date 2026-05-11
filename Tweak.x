@@ -1,4 +1,4 @@
-// VCAM V94.0: The Final Strike - Force MJPEG & Low-Level Photo Hijack
+// VCAM V95.0: Bulletproof MJPEG & Layer Priority Fix
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreImage/CoreImage.h>
@@ -55,9 +55,7 @@ void setup_status_bar(void) {
 }
 
 static CADisplayLink *frameGrabLink = nil;
-@interface VCamFrameGrabber : NSObject
-+ (void)tick:(CADisplayLink *)link;
-@end
+@interface VCamFrameGrabber : NSObject + (void)tick:(CADisplayLink *)link; @end
 @implementation VCamFrameGrabber
 + (void)tick:(CADisplayLink *)link {
     if (!vcamVideoOutput || !vcamPlayer.currentItem) return;
@@ -67,8 +65,7 @@ static CADisplayLink *frameGrabLink = nil;
     if (pb) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
         if (ci) {
-            lastValidFrame = ci;
-            CIContext *ctx = [CIContext contextWithOptions:nil];
+            lastValidFrame = ci; CIContext *ctx = [CIContext contextWithOptions:nil];
             CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
             if (cg) { lastValidUIImage = [UIImage imageWithCGImage:cg]; CGImageRelease(cg); }
         }
@@ -76,12 +73,6 @@ static CADisplayLink *frameGrabLink = nil;
     }
 }
 @end
-
-static void start_grabbing(void) {
-    if (frameGrabLink) return;
-    frameGrabLink = [CADisplayLink displayLinkWithTarget:[VCamFrameGrabber class] selector:@selector(tick:)];
-    [frameGrabLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
-}
 
 @interface VCamFreezeLayer : CALayer @end
 @implementation VCamFreezeLayer
@@ -94,7 +85,7 @@ static void start_grabbing(void) {
 
 static VCamFreezeLayer *freezeLayer = nil;
 static void show_freeze(CALayer *parent, CGRect bounds) {
-    if (!freezeLayer) { freezeLayer = [VCamFreezeLayer layer]; freezeLayer.zPosition = 998; freezeLayer.contentsGravity = kCAGravityResizeAspectFill; }
+    if (!freezeLayer) { freezeLayer = [VCamFreezeLayer layer]; freezeLayer.zPosition = 9998; freezeLayer.contentsGravity = kCAGravityResizeAspectFill; }
     freezeLayer.frame = bounds;
     if (freezeLayer.superlayer != parent) [parent addSublayer:freezeLayer];
     [freezeLayer setNeedsDisplay];
@@ -117,14 +108,14 @@ static void setup_player(NSString *u) {
     vcamLayer = [AVPlayerLayer playerLayerWithPlayer:vcamPlayer];
     vcamLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
     [vcamPlayer play];
-    start_grabbing();
+    if (!frameGrabLink) { frameGrabLink = [CADisplayLink displayLinkWithTarget:[VCamFrameGrabber class] selector:@selector(tick:)]; [frameGrabLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes]; }
     if (!usingFallback) {
         [fallbackTimer invalidate];
         fallbackTimer = [NSTimer scheduledTimerWithTimeInterval:3.0 repeats:NO block:^(NSTimer *timer) {
             if (usingFallback || vcamPlayer.currentItem.status == AVPlayerItemStatusReadyToPlay) return;
             usingFallback = YES;
             NSString *fb = [rtspURL stringByReplacingOccurrencesOfString:@"/index.m3u8" withString:@""];
-            vcam_log(@"V94: HLS Timeout -> Force MJPEG");
+            vcam_log(@"V95: Falling back to MJPEG Engine");
             setup_player(fb);
         }];
     }
@@ -137,7 +128,7 @@ static void setup_player(NSString *u) {
     if (!vcamPlayer) setup_player(rtspURL);
     if (vcamLayer && vcamLayer.superlayer != self) [self addSublayer:vcamLayer];
     if (vcamLayer) {
-        vcamLayer.frame = self.bounds; vcamLayer.zPosition = 999;
+        vcamLayer.frame = self.bounds; vcamLayer.zPosition = 9999; // Extreme Priority
         BOOL f = is_front(self);
         vcamLayer.transform = f ? CATransform3DMakeAffineTransform(CGAffineTransformMakeScale(-1, 1)) : CATransform3DIdentity;
         if (freezeLayer) freezeLayer.transform = vcamLayer.transform;
@@ -162,7 +153,7 @@ static void setup_player(NSString *u) {
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
     UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamSnapshot");
-    if (snap) { vcam_log(@"Low-Level Photo Hijack Active"); return UIImageJPEGRepresentation(snap, 0.9); }
+    if (snap) { vcam_log(@"Photo Hijack V95: Injecting Frame"); return UIImageJPEGRepresentation(snap, 0.9); }
     return %orig;
 }
 - (CGImageRef)CGImageRepresentation { UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamSnapshot"); if (snap) return snap.CGImage; return %orig; }
@@ -175,5 +166,5 @@ static void setup_player(NSString *u) {
 %ctor {
     NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
     if (p) { enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES; if (p[@"rtspURL"]) rtspURL = p[@"rtspURL"]; }
-    vcam_log(@"VCAM V94.0 Ready");
+    vcam_log(@"VCAM V95.0 Bulletproof Ready");
 }
