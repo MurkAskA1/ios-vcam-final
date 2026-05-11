@@ -1,4 +1,4 @@
-// VCAM V111.0: Pure MJPEG Engine - Final Restoration
+// VCAM V111.1: MJPEG Engine Fix - Syntax Correction
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
@@ -7,8 +7,6 @@ static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static UIImageView *vcamImageView = nil;
 static UIImage *lastGrabbedFrame = nil;
-static UILabel *vHUD = nil;
-static UIWindow *vWindow = nil;
 
 void v_log(NSString *m) {
     NSString *p = @"/var/mobile/Documents/vcam_MJPEG.log";
@@ -30,7 +28,7 @@ void v_log(NSString *m) {
     self.buffer = [NSMutableData data];
     NSURLSession *session = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration defaultSessionConfiguration] delegate:self delegateQueue:[NSOperationQueue mainQueue]];
     [[session dataTaskWithURL:[NSURL URLWithString:streamURL]] resume];
-    v_log(@"MJPEG Stream Started");
+    v_log(@"MJPEG Stream Task Started");
 }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
     [self.buffer appendData:data];
@@ -38,9 +36,9 @@ void v_log(NSString *m) {
     NSInteger length = self.buffer.length;
     
     for (NSInteger i = 0; i < length - 1; i++) {
-        if (bytes[i] == 0xFF && bytes[i+1] == 0xD8) { // SOI
+        if (bytes[i] == 0xFF && bytes[i+1] == 0xD8) { // Start of Image
             for (NSInteger j = i + 1; j < length - 1; j++) {
-                if (bytes[j] == 0xFF && bytes[j+1] == 0xD9) { // EOI
+                if (bytes[j] == 0xFF && bytes[j+1] == 0xD9) { // End of Image
                     NSData *jpegData = [self.buffer subdataWithRange:NSMakeRange(i, j - i + 2)];
                     UIImage *img = [UIImage imageWithData:jpegData];
                     if (img) {
@@ -63,10 +61,10 @@ void v_log(NSString *m) {
     if (!vcamImageView) {
         vcamImageView = [[UIImageView alloc] init];
         vcamImageView.contentMode = UIViewContentModeScaleAspectFill;
-        vcamImageView.backgroundColor = [UIColor greenColor].CGColor;
+        vcamImageView.backgroundColor = [UIColor greenColor];
         [[VCamMJPEGProvider shared] start];
     }
-    if (vcamImageView.superlayer != self) [self addSublayer:vcamImageView.layer];
+    if (vcamImageView.layer.superlayer != self) [self addSublayer:vcamImageView.layer];
     vcamImageView.frame = self.bounds;
     vcamImageView.layer.zPosition = 999999;
     
@@ -87,14 +85,14 @@ void v_log(NSString *m) {
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
     UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamS");
-    if (snap) return UIImageJPEGRepresentation(snap, 0.9); 
+    if (snap) return UIImageJPEGRepresentation(snap, 0.95);
     return %orig;
 }
 - (CGImageRef)CGImageRepresentation { UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamS"); if (snap) return snap.CGImage; return %orig; }
 %end
 
 %hook AVCaptureSession
-- (void)startRunning { %orig; v_log(@"Session Started"); }
+- (void)startRunning { %orig; v_log(@"Camera Session Started"); }
 %end
 
 %ctor {
@@ -103,5 +101,5 @@ void v_log(NSString *m) {
         enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
         if (p[@"rtspURL"]) streamURL = [p[@"rtspURL"] stringByReplacingOccurrencesOfString:@"/index.m3u8" withString:@""];
     }
-    v_log(@"VCAM V111.0 MJPEG LOADED");
+    v_log(@"VCAM V111.1 MJPEG LOADED");
 }
