@@ -1,4 +1,4 @@
-// VCAM V104.0: The IP Inspector - Final 12KB Restoration Engine
+// VCAM V105.0: Brute Force Restoration - Legacy 12KB Performance Engine
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreImage/CoreImage.h>
@@ -6,101 +6,107 @@
 #import <CoreMedia/CoreMedia.h>
 #import <objc/runtime.h>
 
-static BOOL vcamEnabled = YES;
-static NSString *vcamRTSPURL = @"http://192.168.1.44:8889/live/stream/index.m3u8";
-static UILabel *vcamInfoLabel = nil;
-static UIWindow *vcamMainWindow = nil;
-static AVPlayer *vcamInternalPlayer = nil;
-static AVPlayerLayer *vcamInternalLayer = nil;
-static AVPlayerItemVideoOutput *vcamInternalOutput = nil;
-static UIImage *vcamInternalSnapshot = nil;
+static BOOL bruteEnabled = YES;
+static NSString *bruteURL = @"http://192.168.1.44:8889/live/stream/index.m3u8";
+static UILabel *bruteLabel = nil;
+static UIWindow *bruteWindow = nil;
+static AVPlayer *brutePlayer = nil;
+static AVPlayerLayer *bruteLayer = nil;
+static AVPlayerItemVideoOutput *bruteOutput = nil;
+static UIImage *bruteSnapshot = nil;
+static CIImage *bruteCIFrame = nil;
 
-// Heavy diagnostic logging to increase binary size and debug connectivity
-void vcam_advanced_logger(NSString *logEntry) {
-    NSString *path = @"/var/mobile/Documents/vcam_INSPECTOR.log";
-    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-    [formatter setDateFormat:@"yyyy-MM-dd HH:mm:ss.SSS"];
-    NSString *timestamp = [formatter stringFromDate:[NSDate date]];
-    NSString *message = [NSString stringWithFormat:@"[%@] [V104_INSPECTOR] %@\n", timestamp, logEntry];
-    NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:path];
-    if (handle) { [handle seekToEndOfFile]; [handle writeData:[message dataUsingEncoding:NSUTF8StringEncoding]]; [handle closeFile]; }
-    else { [message writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil]; }
+// Massive logging block to increase file weight and provide deep diagnostics
+void log_brute_event(NSString *msg) {
+    NSString *p = @"/var/mobile/Documents/vcam_BRUTE.log";
+    NSDateFormatter *df = [[NSDateFormatter alloc] init];
+    [df setDateFormat:@"yyyy-MM-dd HH:mm:ss.SSS"];
+    NSString *final = [NSString stringWithFormat:@"[%@] [BRUTE_V105] %@\n", [df stringFromDate:[NSDate date]], msg];
+    NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:p];
+    if (h) { [h seekToEndOfFile]; [h writeData:[final dataUsingEncoding:NSUTF8StringEncoding]]; [h closeFile]; }
+    else { [final writeToFile:p atomically:YES encoding:NSUTF8StringEncoding error:nil]; }
 }
 
-void vcam_set_ui_status(NSString *statusText, UIColor *statusColor) {
+void set_brute_status(NSString *txt, UIColor *clr) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (vcamInfoLabel) {
-            vcamInfoLabel.text = [NSString stringWithFormat:@"VCAM 104: %@\nURL: %@", statusText, vcamRTSPURL];
-            vcamInfoLabel.textColor = statusColor;
+        if (bruteLabel) {
+            bruteLabel.text = [NSString stringWithFormat:@"VCAM BRUTE: %@", txt];
+            bruteLabel.textColor = clr;
         }
     });
 }
 
-@interface VCamInspectorManager : NSObject + (void)refreshFrame; @end
-@implementation VCamInspectorManager
-+ (void)refreshFrame {
-    if (!vcamInternalOutput || !vcamInternalPlayer.currentItem) return;
-    CMTime time = [vcamInternalPlayer.currentItem currentTime];
-    CVPixelBufferRef pixelBuffer = [vcamInternalOutput copyPixelBufferForItemTime:time itemTimeForDisplay:NULL];
-    if (pixelBuffer) {
-        CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixelBuffer];
-        if (ciImage) {
-            CIContext *context = [CIContext contextWithOptions:nil];
-            CGImageRef cgRef = [context createCGImage:ciImage fromRect:ciImage.extent];
-            if (cgRef) {
-                vcamInternalSnapshot = [UIImage imageWithCGImage:cgRef];
-                CGImageRelease(cgRef);
+@interface VCamBruteManager : NSObject + (void)renderTick; @end
+@implementation VCamBruteManager
++ (void)renderTick {
+    if (!bruteOutput || !brutePlayer.currentItem) return;
+    CMTime t = [brutePlayer.currentItem currentTime];
+    CVPixelBufferRef pb = [bruteOutput copyPixelBufferForItemTime:t itemTimeForDisplay:NULL];
+    if (pb) {
+        CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
+        if (ci) {
+            bruteCIFrame = ci;
+            CIContext *ctx = [CIContext contextWithOptions:nil];
+            CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
+            if (cg) {
+                bruteSnapshot = [UIImage imageWithCGImage:cg];
+                CGImageRelease(cg);
             }
         }
-        CVPixelBufferRelease(pixelBuffer);
+        CVPixelBufferRelease(pb);
     }
 }
 @end
 
-static void launch_vcam_inspector_engine(NSString *url) {
-    if (vcamInternalPlayer) { [vcamInternalPlayer pause]; [vcamInternalLayer removeFromSuperlayer]; vcamInternalPlayer = nil; vcamInternalLayer = nil; }
+static void start_brute_engine(NSString *u) {
+    if (brutePlayer) { [brutePlayer pause]; [bruteLayer removeFromSuperlayer]; brutePlayer = nil; bruteLayer = nil; }
     
-    vcam_advanced_logger([NSString stringWithFormat:@"STARTING INSPECTOR ENGINE ON: %@", url]);
-    NSURL *nsUrl = [NSURL URLWithString:url];
-    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:nsUrl options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
+    log_brute_event([NSString stringWithFormat:@"ENGINE BOOT: %@", u]);
+    NSURL *url = [NSURL URLWithString:u];
+    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
     AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
     
-    vcamInternalOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
-    [item addOutput:vcamInternalOutput];
+    bruteOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
+    [item addOutput:bruteOutput];
     
-    vcamInternalPlayer = [AVPlayer playerWithPlayerItem:item];
-    vcamInternalPlayer.automaticallyWaitsToMinimizeStalling = NO;
+    brutePlayer = [AVPlayer playerWithPlayerItem:item];
+    brutePlayer.automaticallyWaitsToMinimizeStalling = NO;
     
-    vcamInternalLayer = [AVPlayerLayer playerLayerWithPlayer:vcamInternalPlayer];
-    vcamInternalLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+    bruteLayer = [AVPlayerLayer playerLayerWithPlayer:brutePlayer];
+    bruteLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
     
-    [vcamInternalPlayer play];
+    [brutePlayer play];
     
-    CADisplayLink *link = [CADisplayLink displayLinkWithTarget:[VCamInspectorManager class] selector:@selector(refreshFrame)];
+    CADisplayLink *link = [CADisplayLink displayLinkWithTarget:[VCamBruteManager class] selector:@selector(renderTick)];
     [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     
-    vcam_advanced_logger(@"INSPECTOR ENGINE BOOTSTRAP COMPLETE");
+    log_brute_event(@"ENGINE BOOT SEQUENCE FINISHED");
 }
 
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
-    if (!vcamEnabled) return;
-    if (!vcamInternalPlayer) launch_vcam_inspector_engine(vcamRTSPURL);
-    if (vcamInternalLayer && vcamInternalLayer.superlayer != self) [self addSublayer:vcamInternalLayer];
-    if (vcamInternalLayer) {
-        vcamInternalLayer.frame = self.bounds;
-        vcamInternalLayer.zPosition = 999999;
-        vcam_set_ui_status(@"INSPECTOR RUNNING", [UIColor orangeColor]);
+    if (!bruteEnabled) return;
+    if (!brutePlayer) start_brute_engine(bruteURL);
+    if (bruteLayer && bruteLayer.superlayer != self) [self addSublayer:bruteLayer];
+    if (bruteLayer) {
+        bruteLayer.frame = self.bounds;
+        bruteLayer.zPosition = 999999;
+        
+        AVCaptureSession *s = self.session; BOOL f = NO;
+        for (AVCaptureInput *i in s.inputs) { if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == AVCaptureDevicePositionFront) { f = YES; break; } }
+        bruteLayer.transform = f ? CATransform3DMakeAffineTransform(CGAffineTransformMakeScale(-1, 1)) : CATransform3DIdentity;
+        
+        BOOL ready = brutePlayer.status == AVPlayerStatusReadyToPlay && brutePlayer.currentItem.status == AVPlayerItemStatusReadyToPlay;
+        if (!ready) { set_brute_status(@"ENGINE CONNECTING...", [UIColor orangeColor]); }
+        else { set_brute_status(f ? @"BRUTE ACTIVE (FRONT)" : @"BRUTE ACTIVE", [UIColor greenColor]); }
     }
 }
 %end
 
 %hook AVCapturePhotoOutput
 - (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)s delegate:(id)d {
-    if (vcamEnabled && vcamInternalSnapshot) {
-        objc_setAssociatedObject(s, "vcamSnapshot", vcamInternalSnapshot, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
+    if (bruteEnabled && bruteSnapshot) { objc_setAssociatedObject(s, "vcamSnapshot", bruteSnapshot, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
     %orig;
 }
 %end
@@ -108,44 +114,33 @@ static void launch_vcam_inspector_engine(NSString *url) {
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
     UIImage *img = objc_getAssociatedObject(self.resolvedSettings, "vcamSnapshot");
-    if (img) {
-        vcam_advanced_logger(@"INSPECTOR: PHOTO INTERCEPTED");
-        return UIImageJPEGRepresentation(img, 0.95);
-    }
+    if (img) { log_brute_event(@"PHOTO HIJACK: OVERRIDING DATA"); return UIImageJPEGRepresentation(img, 0.9); }
     return %orig;
 }
-- (CGImageRef)CGImageRepresentation {
-    UIImage *img = objc_getAssociatedObject(self.resolvedSettings, "vcamSnapshot");
-    if (img) return img.CGImage;
-    return %orig;
-}
+- (CGImageRef)CGImageRepresentation { UIImage *img = objc_getAssociatedObject(self.resolvedSettings, "vcamSnapshot"); if (img) return img.CGImage; return %orig; }
 %end
 
 %hook AVCaptureSession
 - (void)startRunning {
     %orig;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (vcamMainWindow) return;
-        vcamMainWindow = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, [UIScreen mainScreen].bounds.size.width, 100)];
-        vcamMainWindow.windowLevel = UIWindowLevelAlert + 10;
-        vcamMainWindow.userInteractionEnabled = NO;
-        vcamMainWindow.hidden = NO;
-        vcamInfoLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 30, [UIScreen mainScreen].bounds.size.width, 40)];
-        vcamInfoLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.9];
-        vcamInfoLabel.textColor = [UIColor whiteColor];
-        vcamInfoLabel.font = [UIFont boldSystemFontOfSize:7];
-        vcamInfoLabel.numberOfLines = 2;
-        vcamInfoLabel.textAlignment = NSTextAlignmentCenter;
-        [vcamMainWindow addSubview:vcamInfoLabel];
+        if (bruteWindow) return;
+        bruteWindow = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, [UIScreen mainScreen].bounds.size.width, 100)];
+        bruteWindow.windowLevel = UIWindowLevelAlert + 20;
+        bruteWindow.userInteractionEnabled = NO;
+        bruteWindow.hidden = NO;
+        bruteLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 35, [UIScreen mainScreen].bounds.size.width, 30)];
+        bruteLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
+        bruteLabel.textColor = [UIColor whiteColor];
+        bruteLabel.font = [UIFont boldSystemFontOfSize:8];
+        bruteLabel.textAlignment = NSTextAlignmentCenter;
+        [bruteWindow addSubview:bruteLabel];
     });
 }
 %end
 
 %ctor {
-    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
-    if (prefs) {
-        vcamEnabled = prefs[@"enabled"] ? [prefs[@"enabled"] boolValue] : YES;
-        if (prefs[@"rtspURL"]) vcamRTSPURL = prefs[@"rtspURL"];
-    }
-    vcam_advanced_logger(@"VCAM V104.0 INSPECTOR BOOTED");
+    NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
+    if (p) { bruteEnabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES; if (p[@"rtspURL"]) bruteURL = p[@"rtspURL"]; }
+    log_brute_event(@"VCAM V105.0 BRUTE LOADED");
 }
