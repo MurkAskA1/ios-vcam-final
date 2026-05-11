@@ -1,4 +1,4 @@
-// VCAM V120.0: The Invisible Ghost - Touch Passthrough & Clean Web UI
+// VCAM V121.0: The Stealth Master - Crash Fix & Absolute Clean UI
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -12,10 +12,10 @@ static UIImage *snapshotForPhoto = nil;
 
 @interface VCamPassthroughWindow : UIWindow @end
 @implementation VCamPassthroughWindow
-// Allow touches to pass through to the camera app underneath
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hitView = [super hitTest:point withEvent:event];
-    if (hitView == self || hitView == self.rootViewController.view) return nil;
+    // If the hit view is our webview or window, return nil so touch goes to the app below
+    if (hitView == self || [hitView isDescendantOfView:self.rootViewController.view]) return nil;
     return hitView;
 }
 @end
@@ -28,9 +28,11 @@ static UIImage *snapshotForPhoto = nil;
 static void setup_web_engine(void) {
     if (vcamWindow) return;
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (vcamWindow) return;
+        
         vcamWindow = [[VCamPassthroughWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
         vcamWindow.windowLevel = UIWindowLevelAlert + 5000;
-        vcamWindow.userInteractionEnabled = YES; // Window itself accepts touches to pass them
+        vcamWindow.userInteractionEnabled = YES;
         vcamWindow.backgroundColor = [UIColor clearColor];
         vcamWindow.rootViewController = [[VCamRootVC alloc] init];
         vcamWindow.hidden = NO;
@@ -42,11 +44,14 @@ static void setup_web_engine(void) {
         vcamWebView = [[WKWebView alloc] initWithFrame:vcamWindow.bounds configuration:config];
         vcamWebView.backgroundColor = [UIColor clearColor];
         vcamWebView.opaque = NO;
-        vcamWebView.userInteractionEnabled = NO; // Webview won't steal touches from Shutter button
+        vcamWebView.userInteractionEnabled = NO;
         vcamWebView.scrollView.scrollEnabled = NO;
         
-        // Inject CSS to hide all video controls and force fullscreen
-        NSString *css = @"video { width: 100vw !important; height: 100vh !important; object-fit: cover !important; } .controls, button, .overlay { display: none !important; }";
+        // IMPROVED CSS: Nuclear option to hide ALL player UI elements
+        NSString *css = @"* { -webkit-tap-highlight-color: transparent !important; } "
+                        "video { width: 100vw !important; height: 100vh !important; object-fit: cover !important; pointer-events: none !important; } "
+                        "button, .controls, .video-controls, .overlay, .play-button, .skip-button, .timer { display: none !important; opacity: 0 !important; visibility: hidden !important; }";
+        
         WKUserScript *script = [[WKUserScript alloc] initWithSource:[NSString stringWithFormat:@"var style = document.createElement('style'); style.innerHTML = '%@'; document.head.appendChild(style);", css] injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
         [vcamWebView.configuration.userContentController addUserScript:script];
         
@@ -67,17 +72,24 @@ static void setup_web_engine(void) {
     %orig;
     if (enabled) {
         setup_web_engine();
-        vcamWindow.hidden = NO;
-        AVCaptureSession *s = [self session]; BOOL f = NO;
-        if (s) {
+        if (vcamWindow) vcamWindow.hidden = NO;
+        
+        // Safe session check to prevent crashes in apps like Telegram
+        AVCaptureSession *s = nil;
+        @try {
+            s = [self session];
+        } @catch (NSException *e) {}
+
+        if (s && vcamWebView) {
+            BOOL f = NO;
             for (AVCaptureInput *i in [s inputs]) {
-                if ([i isKindOfClass:[AVCaptureDeviceInput class]]) {
+                if ([i isKindOfClass:objc_getClass("AVCaptureDeviceInput")]) {
                     if (((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; }
                 }
             }
+            vcamWebView.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
         }
-        vcamWebView.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
-        [self setOpacity:0.01]; // Hide real lens
+        [self setOpacity:0.01];
     }
 }
 %end
@@ -103,7 +115,10 @@ static void setup_web_engine(void) {
 %end
 
 %hook AVCaptureSession
-- (void)stopRunning { %orig; if (vcamWindow) vcamWindow.hidden = YES; }
+- (void)stopRunning {
+    %orig;
+    if (vcamWindow) vcamWindow.hidden = YES;
+}
 %end
 
 %ctor {
