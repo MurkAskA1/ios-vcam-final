@@ -1,94 +1,74 @@
-// VCAM V113.0: Window Diagnostics & Hybrid Fallback Engine
+// VCAM V114.0: The MJPEG Immortal - Hybrid Window + Layer Override
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
-static NSString *streamURL = @"http://192.168.1.44:8889/live/stream/index.m3u8";
-static UIWindow *vcamVideoWindow = nil;
-static AVPlayer *vcamPlayer = nil;
-static AVPlayerLayer *vcamLayer = nil;
-static UIImage *lastVFrame = nil;
-static AVPlayerItemVideoOutput *vOutput = nil;
-static UILabel *diagHUD = nil;
+static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
+static UIWindow *vcamImmortalWindow = nil;
+static UIImageView *vcamDisplayView = nil;
+static UIImage *lastFrameV = nil;
+static NSMutableData *mjpegBuffer = nil;
 
-void v_log(NSString *m) {
-    NSString *p = @"/var/mobile/Documents/vcam_WINDOW.log";
-    NSString *f = [NSString stringWithFormat:@"[%@] %@\n", [NSDate date], m];
-    NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:p];
-    if (h) { [h seekToEndOfFile]; [h writeData:[f dataUsingEncoding:NSUTF8StringEncoding]]; [h closeFile]; }
-    else { [f writeToFile:p atomically:YES encoding:NSUTF8StringEncoding error:nil]; }
+@interface VCamMJPEGProvider : NSObject <NSURLSessionDataDelegate> + (instancetype)shared; - (void)start; @end
+@implementation VCamMJPEGProvider
++ (instancetype)shared { static VCamMJPEGProvider *s = nil; static dispatch_once_t once; dispatch_once(&once, ^{ s = [[self alloc] init]; }); return s; }
+- (void)start {
+    mjpegBuffer = [NSMutableData data];
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration defaultSessionConfiguration] delegate:self delegateQueue:[NSOperationQueue mainQueue]];
+    [[session dataTaskWithURL:[NSURL URLWithString:streamURL]] resume];
 }
-
-@interface VCamFrameLink : NSObject + (void)tick; @end
-@implementation VCamFrameLink
-+ (void)tick {
-    if (!vOutput || !vcamPlayer.currentItem) return;
-    CMTime t = [vcamPlayer.currentItem currentTime];
-    CVPixelBufferRef pb = [vOutput copyPixelBufferForItemTime:t itemTimeForDisplay:NULL];
-    if (pb) {
-        CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
-        CIContext *ctx = [CIContext contextWithOptions:nil];
-        CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
-        if (cg) { lastVFrame = [UIImage imageWithCGImage:cg]; CGImageRelease(cg); }
-        CVPixelBufferRelease(pb);
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveData:(NSData *)data {
+    [mjpegBuffer appendData:data];
+    const unsigned char *b = (const unsigned char *)mjpegBuffer.bytes;
+    NSInteger len = mjpegBuffer.length;
+    for (NSInteger i = 0; i < len - 1; i++) {
+        if (b[i] == 0xFF && b[i+1] == 0xD8) {
+            for (NSInteger j = i + 1; j < len - 1; j++) {
+                if (b[j] == 0xFF && b[j+1] == 0xD9) {
+                    NSData *jpeg = [mjpegBuffer subdataWithRange:NSMakeRange(i, j - i + 2)];
+                    UIImage *img = [UIImage imageWithData:jpeg];
+                    if (img) { lastFrameV = img; if (vcamDisplayView) vcamDisplayView.image = img; }
+                    [mjpegBuffer replaceBytesInRange:NSMakeRange(0, j + 2) withBytes:NULL length:0];
+                    return;
+                }
+            }
+        }
     }
 }
 @end
 
-static void setup_master_window(void) {
-    if (vcamVideoWindow) return;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        vcamVideoWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-        vcamVideoWindow.windowLevel = UIWindowLevelAlert + 1000;
-        vcamVideoWindow.backgroundColor = [UIColor blueColor];
-        vcamVideoWindow.userInteractionEnabled = NO;
-        vcamVideoWindow.hidden = NO;
-        
-        diagHUD = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, [UIScreen mainScreen].bounds.size.width, 40)];
-        diagHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
-        diagHUD.textColor = [UIColor whiteColor];
-        diagHUD.font = [UIFont boldSystemFontOfSize:10];
-        diagHUD.textAlignment = NSTextAlignmentCenter;
-        diagHUD.numberOfLines = 2;
-        diagHUD.text = [NSString stringWithFormat:@"WINDOW ACTIVE\nSTREAM: %@", streamURL];
-        [vcamVideoWindow addSubview:diagHUD];
-        
-        vcamPlayer = [AVPlayer playerWithURL:[NSURL URLWithString:streamURL]];
-        vcamPlayer.automaticallyWaitsToMinimizeStalling = NO;
-        vcamLayer = [AVPlayerLayer playerLayerWithPlayer:vcamPlayer];
-        vcamLayer.frame = vcamVideoWindow.bounds;
-        vcamLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-        [vcamVideoWindow.layer addSublayer:vcamLayer];
-        
-        vOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
-        [vcamPlayer.currentItem addOutput:vOutput];
-        [vcamPlayer play];
-        
-        CADisplayLink *link = [CADisplayLink displayLinkWithTarget:[VCamFrameLink class] selector:@selector(tick)];
-        [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
-        v_log(@"Master Window & HUD Created");
-    });
+static void setup_immortal_view(UIView *parent) {
+    if (!vcamDisplayView) {
+        vcamDisplayView = [[UIImageView alloc] initWithFrame:parent.bounds];
+        vcamDisplayView.contentMode = UIViewContentModeScaleAspectFill;
+        vcamDisplayView.backgroundColor = [UIColor blueColor];
+        vcamDisplayView.userInteractionEnabled = NO;
+        [[VCamMJPEGProvider shared] start];
+    }
+    if (vcamDisplayView.superview != parent) [parent addSubview:vcamDisplayView];
+    vcamDisplayView.frame = parent.bounds;
+    [parent bringSubviewToFront:vcamDisplayView];
 }
 
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
-        setup_master_window();
-        vcamVideoWindow.hidden = NO;
-        self.opacity = 0.0;
-        if (vcamPlayer.status == AVPlayerStatusReadyToPlay) {
-            diagHUD.text = @"STREAMING ACTIVE";
-            diagHUD.textColor = [UIColor greenColor];
+        setup_immortal_view(self.superlayer.delegate && [self.superlayer.delegate isKindOfClass:[UIView class]] ? (UIView *)self.superlayer.delegate : nil);
+        if (vcamDisplayView) {
+             AVCaptureSession *s = self.session; BOOL f = NO;
+             for (AVCaptureInput *i in s.inputs) { if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == AVCaptureDevicePositionFront) { f = YES; break; } }
+             vcamDisplayView.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
         }
+        self.opacity = 0.01;
     }
 }
 %end
 
 %hook AVCapturePhotoOutput
 - (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)s delegate:(id)d {
-    if (enabled && lastVFrame) objc_setAssociatedObject(s, "vcamS", lastVFrame, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (enabled && lastFrameV) objc_setAssociatedObject(s, "vcamS", lastFrameV, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     %orig;
 }
 %end
@@ -96,21 +76,16 @@ static void setup_master_window(void) {
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
     UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamS");
-    if (snap) { v_log(@"Photo Hijack Success"); return UIImageJPEGRepresentation(snap, 0.95); }
+    if (snap) return UIImageJPEGRepresentation(snap, 0.95);
     return %orig;
 }
 - (CGImageRef)CGImageRepresentation { UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamS"); if (snap) return snap.CGImage; return %orig; }
-%end
-
-%hook AVCaptureSession
-- (void)stopRunning { %orig; if (vcamVideoWindow) vcamVideoWindow.hidden = YES; }
 %end
 
 %ctor {
     NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
     if (p) {
         enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
-        if (p[@"rtspURL"]) streamURL = p[@"rtspURL"];
+        if (p[@"rtspURL"]) streamURL = [p[@"rtspURL"] stringByReplacingOccurrencesOfString:@"/index.m3u8" withString:@""];
     }
-    v_log(@"VCAM V113.0 Loaded");
 }
