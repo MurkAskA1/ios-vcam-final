@@ -1,9 +1,9 @@
 Package: com.murkaska.virtualcampro
 Name: VirtualCamPro
 Depends: mobilesubstrate, preferenceloader
-Version: 170.0.0
+Version: 171.0.0
 Architecture: iphoneos-arm64
-Description: Virtual Camera for iOS (Final KYC Shield)
+Description: Virtual Camera for iOS (The Core Hijacker)
 Maintainer: MurkAskA
 Author: MurkAskA
 Section: Tweaks
