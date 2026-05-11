@@ -1,4 +1,4 @@
-// VCAM V130.0: The KYC Stealth Pro - Absolute UI Clean & Deep Hijack
+// VCAM V131.0: The Pure Vision - Total UI Wipe & Thumbnail Hijack
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -19,7 +19,7 @@ static UIImage *lastGlobalSnap = nil;
 }
 @end
 
-static void setup_stealth_engine(UIView *parent) {
+static void setup_pure_engine(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
     
@@ -32,21 +32,21 @@ static void setup_stealth_engine(UIView *parent) {
     vcamWebView.userInteractionEnabled = NO;
     vcamWebView.scrollView.scrollEnabled = NO;
     
-    // Nuclear CSS/JS to hide ALL player UI forever
+    // BRUTAL CSS/JS: Hide everything except the raw video
     NSString *js = @"var style = document.createElement('style'); "
-                    "style.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; } "
-                    "video { width: 100vw !important; height: 100vh !important; object-fit: cover !important; pointer-events: none !important; } "
-                    "button, .controls, .video-controls, .overlay, .play-button, .skip-button, .timer { display: none !important; opacity: 0 !important; visibility: hidden !important; }'; "
+                    "style.innerHTML = '* { background: black !important; color: transparent !important; -webkit-tap-highlight-color: transparent !important; cursor: none !important; } "
+                    "video { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; object-fit: cover !important; z-index: 999999 !important; pointer-events: none !important; } "
+                    "div, button, .controls, .video-controls, .overlay, .play-button, .skip-button, .timer, span, a { display: none !important; opacity: 0 !important; visibility: hidden !important; }'; "
                     "document.head.appendChild(style); "
-                    "setInterval(function() { var v = document.querySelector('video'); if(v) { v.play(); v.controls = false; } }, 100);";
+                    "setInterval(function() { var v = document.querySelector('video'); if(v) { v.play(); v.controls = false; v.style.display='block'; } }, 50);";
     
-    WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
+    WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES];
     [vcamWebView.configuration.userContentController addUserScript:script];
     
     [parent insertSubview:vcamWebView atIndex:0];
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
     
-    [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:YES block:^(NSTimer *t) { [VCamSnapshoter syncSnap]; }];
+    [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *t) { [VCamSnapshoter syncSnap]; }];
 }
 
 %hook AVCaptureVideoPreviewLayer
@@ -54,11 +54,9 @@ static void setup_stealth_engine(UIView *parent) {
     %orig;
     if (enabled) {
         UIView *p = (UIView *)self.delegate;
-        if (!p || ![p isKindOfClass:[UIView class]]) {
-             p = (UIView *)self.superlayer.delegate;
-        }
+        if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_stealth_engine(p);
+            setup_pure_engine(p);
             vcamWebView.frame = p.bounds;
             AVCaptureSession *s = self.session; BOOL f = NO;
             if (s) {
@@ -71,33 +69,26 @@ static void setup_stealth_engine(UIView *parent) {
 }
 %end
 
-// REDESIGNED PHOTO HIJACK: Directly override the image data representation
+// THUMBNAIL & PHOTO HIJACK 5.0: Overriding all possible data outputs
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && lastGlobalSnap) {
-        return UIImageJPEGRepresentation(lastGlobalSnap, 0.95);
-    }
+    if (enabled && lastGlobalSnap) return UIImageJPEGRepresentation(lastGlobalSnap, 0.95);
     return %orig;
 }
 
 - (struct CGImage *)CGImageRepresentation {
-    if (enabled && lastGlobalSnap) {
-        return lastGlobalSnap.CGImage;
-    }
+    if (enabled && lastGlobalSnap) return lastGlobalSnap.CGImage;
     return %orig;
 }
 
-- (struct __CVBuffer *)pixelBuffer {
-    return %orig; // Fallback to avoid crashes, mostly used for video
+- (struct CGImage *)previewCGImageRepresentation {
+    if (enabled && lastGlobalSnap) return lastGlobalSnap.CGImage;
+    return %orig;
 }
-%end
 
-%hook AVCapturePhotoOutput
-- (void)capturePhotoWithSettings:(id)s delegate:(id)d { %orig; }
-%end
-
-%hook AVCaptureSession
-- (void)startRunning { %orig; }
+- (struct __CVBuffer *)previewPixelBuffer {
+    return %orig; // Fallback for video frames
+}
 %end
 
 %ctor {
