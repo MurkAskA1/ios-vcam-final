@@ -1,4 +1,4 @@
-// VCAM V151.0: The Supreme Fix - Fixed Typos & Guaranteed Display
+// VCAM V152.0: The Ultimate Fix - Raw Text Only
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -9,17 +9,15 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_supreme(UIView *parent) {
+static void setup_vcam_final(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     config.allowsInlineMediaPlayback = YES;
-    config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     
     vcamWebView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     vcamWebView.backgroundColor = [UIColor blackColor];
-    vcamWebView.opaque = YES;
     vcamWebView.userInteractionEnabled = NO;
     vcamWebView.scrollView.scrollEnabled = NO;
 
@@ -30,8 +28,7 @@ static void setup_vcam_supreme(UIView *parent) {
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
     [parent insertSubview:vcamWebView atIndex:0];
 
-    [NSTimer scheduledTimerWithTimeInterval:0.4 repeats:YES block:^(NSTimer *t) {
-        if (!enabled) return;
+    [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
         [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
             if (img) sharedSnapshot = img;
         }];
@@ -45,17 +42,17 @@ static void setup_vcam_supreme(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_supreme(p);
+            setup_vcam_final(p);
             vcamWebView.frame = p.bounds;
             
             AVCaptureSession *s = self.session;
-            BOOL isFront = NO;
+            BOOL f = NO;
             if (s) {
-                for (AVCaptureDeviceInput *i in s.inputs) {
-                    if (i.device.position == 2) { isFront = YES; break; }
+                for (id i in s.inputs) {
+                    if ([i isKindOfClass:objc_getClass("AVCaptureDeviceInput")] && ((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; }
                 }
             }
-            vcamWebView.transform = isFront ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
+            vcamWebView.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
             [self setOpacity:0.0];
         }
     }
