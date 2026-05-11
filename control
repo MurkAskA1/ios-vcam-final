@@ -1,6 +1,9 @@
-UGFja2FnZTogY29tLm11cmthc2thLnZpcnR1YWxjYW1wcm8KTmFtZTogVmly
-dHVhbENhbVBybwpEZXBlbmRzOiBtb2JpbGVzdWJzdHJhdGUsIHByZWZlcmVu
-Y2Vsb2FkZXIKVmVyc2lvbjogMTQ0LjAuMApBcmNoaXRlY3R1cmU6IGlwaG9u
-ZW9zLWFybTY0CkRlc2NyaXB0aW9uOiBTdGFuZGFsb25lIFJUU1AgVmlydHVh
-bCBDYW1lcmEgZm9yIGlPUwpNYWludGFpbmVyOiBNdXJrQXNrQQpBdXRob3I6
-IE11cmtBc2tBClNlY3Rpb246IFR3ZWFrcwo=
+Package: com.murkaska.virtualcampro
+Name: VirtualCamPro
+Depends: mobilesubstrate, preferenceloader
+Version: 145.0.0
+Architecture: iphoneos-arm64
+Description: Standalone RTSP Virtual Camera for iOS
+Maintainer: MurkAskA
+Author: MurkAskA
+Section: Tweaks
