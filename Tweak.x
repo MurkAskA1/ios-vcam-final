@@ -1,96 +1,98 @@
-// VCAM V133.0: The Pure Engine - Native MJPEG & Absolute Photo Hijack
+// VCAM V134.0: The Chrome-Hybrid Engine - Absolute Stealth & Total Hijack
 #import <UIKit/UIKit.h>
+#import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
-static UIImageView *vcamDisplayView = nil;
-static UIImage *lastGlobalFrame = nil;
-static NSMutableData *mjpegBuffer = nil;
+static UIWindow *vcamWindow = nil;
+static WKWebView *vcamWebView = nil;
+static UIImage *lastSnapV = nil;
 
-@interface VCamMJPEGProvider : NSObject <NSURLSessionDataDelegate> + (instancetype)shared; - (void)start; @end
-@implementation VCamMJPEGProvider
-+ (instancetype)shared { static VCamMJPEGProvider *s = nil; static dispatch_once_t once; dispatch_once(&once, ^{ s = [[self alloc] init]; }); return s; }
-- (void)start {
-    mjpegBuffer = [NSMutableData data];
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration defaultSessionConfiguration] delegate:self delegateQueue:[NSOperationQueue mainQueue]];
-    [[session dataTaskWithURL:[NSURL URLWithString:streamURL]] resume];
-}
-- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveData:(NSData *)data {
-    [mjpegBuffer appendData:data];
-    const unsigned char *b = (const unsigned char *)mjpegBuffer.bytes;
-    NSInteger len = mjpegBuffer.length;
-    for (NSInteger i = 0; i < len - 1; i++) {
-        if (b[i] == 0xFF && b[i+1] == 0xD8) {
-            for (NSInteger j = i + 1; j < len - 1; j++) {
-                if (b[j] == 0xFF && b[j+1] == 0xD9) {
-                    NSData *jpeg = [mjpegBuffer subdataWithRange:NSMakeRange(i, j - i + 2)];
-                    UIImage *img = [UIImage imageWithData:jpeg];
-                    if (img) { 
-                        lastGlobalFrame = img; 
-                        if (vcamDisplayView) vcamDisplayView.image = img; 
-                    }
-                    [mjpegBuffer replaceBytesInRange:NSMakeRange(0, j + 2) withBytes:NULL length:0];
-                    return;
-                }
-            }
-        }
-    }
-}
+@interface VCamPassthroughWindow : UIWindow @end
+@implementation VCamPassthroughWindow
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event { return nil; } // All touches go to camera app below
 @end
 
-static void setup_native_engine(UIView *parent) {
-    if (!parent) return;
-    if (!vcamDisplayView) {
-        vcamDisplayView = [[UIImageView alloc] initWithFrame:parent.bounds];
-        vcamDisplayView.contentMode = UIViewContentModeScaleAspectFill;
-        vcamDisplayView.backgroundColor = [UIColor blackColor];
-        vcamDisplayView.userInteractionEnabled = NO;
-        [[VCamMJPEGProvider shared] start];
-    }
-    if (vcamDisplayView.superview != parent) [parent insertSubview:vcamDisplayView atIndex:0];
-    vcamDisplayView.frame = parent.bounds;
-    [parent bringSubviewToFront:vcamDisplayView];
+@interface VCamRootVC : UIViewController @end
+@implementation VCamRootVC
+- (BOOL)prefersStatusBarHidden { return YES; }
+@end
+
+static void setup_chrome_hybrid(void) {
+    if (vcamWindow) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        vcamWindow = [[VCamPassthroughWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        vcamWindow.windowLevel = UIWindowLevelAlert + 5000;
+        vcamWindow.userInteractionEnabled = NO;
+        vcamWindow.backgroundColor = [UIColor blackColor];
+        vcamWindow.rootViewController = [[VCamRootVC alloc] init];
+        vcamWindow.hidden = NO;
+        
+        WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+        vcamWebView = [[WKWebView alloc] initWithFrame:vcamWindow.bounds configuration:config];
+        vcamWebView.backgroundColor = [UIColor blackColor];
+        vcamWebView.opaque = YES;
+        vcamWebView.userInteractionEnabled = NO;
+        vcamWebView.scrollView.scrollEnabled = NO;
+        
+        // The "Chrome Trick": Using <img> instead of <video> to avoid all player UI elements (pause buttons)
+        NSString *html = [NSString stringWithFormat:@"<html><body style='margin:0;padding:0;background:black;'><img src='%@' style='width:100vw;height:100vh;object-fit:cover;'></body></html>", streamURL];
+        [vcamWebView loadHTMLString:html baseURL:nil];
+        
+        [vcamWindow.rootViewController.view addSubview:vcamWebView];
+        
+        [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *t) {
+            [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
+                if (img) lastSnapV = img;
+            }];
+        }];
+    });
 }
 
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
-        UIView *p = (UIView *)self.delegate;
-        if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
-        if (p && [p isKindOfClass:[UIView class]]) {
-            setup_native_engine(p);
-            vcamDisplayView.frame = p.bounds;
-            AVCaptureSession *s = self.session; BOOL f = NO;
-            if (s) {
-                for (id i in s.inputs) { if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; } }
+        setup_chrome_hybrid();
+        vcamWindow.hidden = NO;
+        
+        AVCaptureSession *s = nil; @try { s = [self session]; } @catch(id e) {}
+        BOOL f = NO;
+        if (s) {
+            for (id i in [s inputs]) {
+                if ([i isKindOfClass:objc_getClass("AVCaptureDeviceInput")]) {
+                    if (((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; }
+                }
             }
-            vcamDisplayView.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
-            [self setOpacity:0.0]; // Hide real camera feed
         }
+        vcamWebView.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
+        [self setOpacity:0.0];
     }
 }
 %end
 
+// TOTAL HIJACK: Overriding every possible output for main photo and thumbnails
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && lastGlobalFrame) return UIImageJPEGRepresentation(lastGlobalFrame, 0.95);
+    if (enabled && lastSnapV) return UIImageJPEGRepresentation(lastSnapV, 0.95);
     return %orig;
 }
+
 - (struct CGImage *)CGImageRepresentation {
-    if (enabled && lastGlobalFrame) return lastGlobalFrame.CGImage;
+    if (enabled && lastSnapV) return lastSnapV.CGImage;
     return %orig;
 }
+
 - (struct CGImage *)previewCGImageRepresentation {
-    if (enabled && lastGlobalFrame) return lastGlobalFrame.CGImage;
+    if (enabled && lastSnapV) return lastSnapV.CGImage;
     return %orig;
 }
 %end
 
-%hook AVCapturePhotoOutput
-- (void)capturePhotoWithSettings:(id)s delegate:(id)d { %orig; }
+%hook AVCaptureSession
+- (void)stopRunning { %orig; if (vcamWindow) vcamWindow.hidden = YES; }
 %end
 
 %ctor {
