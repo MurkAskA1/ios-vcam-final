@@ -1,4 +1,4 @@
-// VCAM V157.0: The Ultimate Vision - Fixed Typos & Better Snapshot
+// VCAM V158.0: The Final Victory - Fixed Build & Full Integration
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -9,7 +9,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *snapshotForHijack = nil;
 
-static void setup_vcam_final(UIView *parent) {
+static void setup_vcam_v158(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -22,7 +22,6 @@ static void setup_vcam_final(UIView *parent) {
     vcamWebView.userInteractionEnabled = NO;
     vcamWebView.scrollView.scrollEnabled = NO;
 
-    // Fixed Typo: NSURLRequest casing was incorrect in previous build
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
 
     NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; outline: none !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black; overflow: hidden; } .vjs-control-bar, .vjs-big-play-button, button, header, footer, .controls, .play-button { display: none !important; }'; document.head.appendChild(s);";
@@ -46,7 +45,7 @@ static void setup_vcam_final(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_final(p);
+            setup_vcam_v158(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             
