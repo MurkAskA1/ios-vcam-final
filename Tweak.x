@@ -1,4 +1,4 @@
-// VCAM V107.0: The KYC Pro Evolution - Advanced Hijack & Diagnostics
+// VCAM V108.0: Zero Latency Pro - Enhanced Connectivity & HUD IP Monitor
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreImage/CoreImage.h>
@@ -26,7 +26,8 @@ void vcam_pro_log(NSString *msg) {
 void update_vcam_hud(NSString *txt, UIColor *clr) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (vcamHUD) {
-            vcamHUD.text = [NSString stringWithFormat:@"VCAM PRO: %@", txt];
+            NSURL *u = [NSURL URLWithString:vcamURL];
+            vcamHUD.text = [NSString stringWithFormat:@"VCAM PRO: %@\nTARGET: %@", txt, u.host];
             vcamHUD.textColor = clr;
         }
     });
@@ -40,11 +41,10 @@ void update_vcam_hud(NSString *txt, UIColor *clr) {
     CVPixelBufferRef pb = [vcamOutput copyPixelBufferForItemTime:t itemTimeForDisplay:NULL];
     if (pb) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
-        CIContext *ctx = [CIContext contextWithOptions:nil];
-        CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
-        if (cg) {
-            vcamLatestImage = [UIImage imageWithCGImage:cg];
-            CGImageRelease(cg);
+        if (ci) {
+            CIContext *ctx = [CIContext contextWithOptions:nil];
+            CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
+            if (cg) { vcamLatestImage = [UIImage imageWithCGImage:cg]; CGImageRelease(cg); }
         }
         CVPixelBufferRelease(pb);
     }
@@ -54,10 +54,15 @@ void update_vcam_hud(NSString *txt, UIColor *clr) {
 static void start_vcam_engine(NSString *u) {
     if (vcamPlayer) { [vcamPlayer pause]; [vcamLayer removeFromSuperlayer]; vcamPlayer = nil; vcamLayer = nil; }
     
-    vcam_pro_log([NSString stringWithFormat:@"BOOTING ENGINE: %@", u]);
-    vcamPlayer = [AVPlayer playerWithURL:[NSURL URLWithString:u]];
+    vcam_pro_log([NSString stringWithFormat:@"BOOTING ENGINE V108: %@", u]);
+    NSURL *url = [NSURL URLWithString:u];
+    AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
+    
     vcamOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
-    [vcamPlayer.currentItem addOutput:vcamOutput];
+    [item addOutput:vcamOutput];
+    
+    vcamPlayer = [AVPlayer playerWithPlayerItem:item];
+    vcamPlayer.automaticallyWaitsToMinimizeStalling = NO; // Zero Latency
     
     vcamLayer = [AVPlayerLayer playerLayerWithPlayer:vcamPlayer];
     vcamLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
@@ -65,8 +70,11 @@ static void start_vcam_engine(NSString *u) {
     
     [vcamPlayer play];
     
-    CADisplayLink *link = [CADisplayLink displayLinkWithTarget:[VCamFrameGrabber class] selector:@selector(grabTick)];
-    [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    static CADisplayLink *link = nil;
+    if (!link) {
+        link = [CADisplayLink displayLinkWithTarget:[VCamFrameGrabber class] selector:@selector(grabTick)];
+        [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    }
     
     update_vcam_hud(@"CONNECTING...", [UIColor yellowColor]);
 }
@@ -84,7 +92,10 @@ static void start_vcam_engine(NSString *u) {
     for (AVCaptureInput *i in s.inputs) { if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == AVCaptureDevicePositionFront) { f = YES; break; } }
     vcamLayer.transform = f ? CATransform3DMakeAffineTransform(CGAffineTransformMakeScale(-1, 1)) : CATransform3DIdentity;
     
-    if (vcamPlayer.status == AVPlayerStatusReadyToPlay) update_vcam_hud(f ? @"PRO ACTIVE (FRONT)" : @"PRO ACTIVE", [UIColor greenColor]);
+    if (vcamPlayer.status == AVPlayerStatusReadyToPlay && vcamPlayer.currentItem.status == AVPlayerItemStatusReadyToPlay) {
+        update_vcam_hud(f ? @"PRO ACTIVE (FRONT)" : @"PRO ACTIVE", [UIColor greenColor]);
+        vcamLayer.backgroundColor = [UIColor clearColor].CGColor;
+    }
 }
 %end
 
@@ -98,7 +109,7 @@ static void start_vcam_engine(NSString *u) {
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
     UIImage *img = objc_getAssociatedObject(self.resolvedSettings, "vcamSnap");
-    if (img) { vcam_pro_log(@"KYC HIJACK: Success"); return UIImageJPEGRepresentation(img, 0.95); }
+    if (img) return UIImageJPEGRepresentation(img, 0.95);
     return %orig;
 }
 - (CGImageRef)CGImageRepresentation { UIImage *img = objc_getAssociatedObject(self.resolvedSettings, "vcamSnap"); if (img) return img.CGImage; return %orig; }
@@ -113,10 +124,11 @@ static void start_vcam_engine(NSString *u) {
         vcamWindow.windowLevel = UIWindowLevelAlert + 100;
         vcamWindow.userInteractionEnabled = NO;
         vcamWindow.hidden = NO;
-        vcamHUD = [[UILabel alloc] initWithFrame:CGRectMake(10, 40, [UIScreen mainScreen].bounds.size.width - 20, 30)];
-        vcamHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+        vcamHUD = [[UILabel alloc] initWithFrame:CGRectMake(10, 40, [UIScreen mainScreen].bounds.size.width - 20, 40)];
+        vcamHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.75];
         vcamHUD.textColor = [UIColor whiteColor];
-        vcamHUD.font = [UIFont boldSystemFontOfSize:10];
+        vcamHUD.font = [UIFont boldSystemFontOfSize:9];
+        vcamHUD.numberOfLines = 2;
         vcamHUD.textAlignment = NSTextAlignmentCenter;
         vcamHUD.layer.cornerRadius = 8; vcamHUD.clipsToBounds = YES;
         [vcamWindow addSubview:vcamHUD];
@@ -130,5 +142,5 @@ static void start_vcam_engine(NSString *u) {
         vcamEnabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
         if (p[@"rtspURL"]) vcamURL = p[@"rtspURL"];
     }
-    vcam_pro_log(@"VCAM V107.0 PRO LOADED");
+    vcam_pro_log(@"VCAM V108.0 PRO LOADED");
 }
