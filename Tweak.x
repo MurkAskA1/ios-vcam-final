@@ -1,43 +1,55 @@
-// VCAM V147.0: The Bulletproof Native - No Browser, No Question Marks
+// VCAM V148.0: The Reliable HLS Restoration - Zero Buffering, Stealth Integration
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
-static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
-static UIImageView *vcamImageView = nil;
-static UIImage *lastValidFrame = nil;
+static NSString *streamURL = @"http://192.168.1.44:8889/live/stream/index.m3u8";
+static AVPlayer *vcamPlayer = nil;
+static AVPlayerLayer *vcamPlayerLayer = nil;
+static AVPlayerItemVideoOutput *videoOutput = nil;
+static UILabel *statusLabel = nil;
 
-static void setup_native_vcam(UIView *parent) {
-    if (!parent || (vcamImageView && vcamImageView.superview == parent)) return;
-    if (vcamImageView) [vcamImageView removeFromSuperview];
-
-    vcamImageView = [[UIImageView alloc] initWithFrame:parent.bounds];
-    vcamImageView.backgroundColor = [UIColor blackColor];
-    vcamImageView.contentMode = UIViewContentModeScaleAspectFill;
-    vcamImageView.clipsToBounds = YES;
-    vcamImageView.userInteractionEnabled = NO;
-    [parent insertSubview:vcamImageView atIndex:0];
-
-    // Native MJPEG Loader - Bypasses WebKit/Chrome restrictions
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
-        while (enabled) {
-            @autoreleasepool {
-                NSURL *url = [NSURL URLWithString:streamURL];
-                NSData *data = [NSData dataWithContentsOfURL:url options:NSDataReadingUncached error:nil];
-                if (data && data.length > 1000) {
-                    UIImage *img = [UIImage imageWithData:data];
-                    if (img) {
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            vcamImageView.image = img;
-                            lastValidFrame = img;
-                        });
-                    }
-                }
-            }
-            [NSThread sleepForTimeInterval:0.04]; // ~25 FPS
-        }
+static void update_status(NSString *text) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (statusLabel) statusLabel.text = [NSString stringWithFormat:@"VCAM: %@", text];
     });
+}
+
+static void setup_hls_player(UIView *parent) {
+    if (!parent || (vcamPlayerLayer && vcamPlayerLayer.superlayer == parent.layer)) return;
+    if (vcamPlayerLayer) [vcamPlayerLayer removeFromSuperlayer];
+    if (statusLabel) [statusLabel removeFromSuperview];
+
+    // Diagnostic Label
+    statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 50, parent.bounds.size.width - 40, 60)];
+    statusLabel.textColor = [UIColor greenColor];
+    statusLabel.font = [UIFont boldSystemFontOfSize:12];
+    statusLabel.numberOfLines = 0;
+    statusLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.5];
+    [parent addSubview:statusLabel];
+    update_status([NSString stringWithFormat:@"Loading %@", streamURL]);
+
+    NSURL *url = [NSURL URLWithString:streamURL];
+    AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
+    
+    vcamPlayer = [AVPlayer playerWithPlayerItem:item];
+    vcamPlayer.actionAtItemEnd = AVPlayerActionAtItemEndNone;
+    vcamPlayer.automaticallyWaitsToMinimizeStalling = NO;
+
+    videoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
+    [item addOutput:videoOutput];
+
+    vcamPlayerLayer = [AVPlayerLayer playerLayerWithPlayer:vcamPlayer];
+    vcamPlayerLayer.frame = parent.bounds;
+    vcamPlayerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+    vcamPlayerLayer.backgroundColor = [UIColor blackColor].CGColor;
+
+    [parent.layer insertSublayer:vcamPlayerLayer atIndex:0];
+    [vcamPlayer play];
+
+    // Observer for readiness
+    [item addObserver:[[NSObject alloc] init] forKeyPath:@"status" options:NSKeyValueObservingOptionNew context:nil];
 }
 
 %hook AVCaptureVideoPreviewLayer
@@ -47,8 +59,8 @@ static void setup_native_vcam(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_native_vcam(p);
-            vcamImageView.frame = p.bounds;
+            setup_hls_player(p);
+            vcamPlayerLayer.frame = p.bounds;
             
             AVCaptureSession *s = self.session;
             BOOL isFront = NO;
@@ -57,7 +69,7 @@ static void setup_native_vcam(UIView *parent) {
                     if (i.device.position == 2) { isFront = YES; break; }
                 }
             }
-            vcamImageView.transform = isFront ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
+            vcamPlayerLayer.transform = isFront ? CATransform3DMakeScale(-1, 1, 1) : CATransform3DIdentity;
             [self setOpacity:0.0];
         }
     }
@@ -66,17 +78,32 @@ static void setup_native_vcam(UIView *parent) {
 
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && lastValidFrame) return UIImageJPEGRepresentation(lastValidFrame, 0.95);
+    if (enabled && videoOutput) {
+        CMTime itemTime = [vcamPlayer.currentItem currentTime];
+        CVPixelBufferRef buffer = [videoOutput copyPixelBufferForItemTime:itemTime itemTimeForDisplay:nil];
+        if (buffer) {
+            CIImage *ci = [CIImage imageWithCVPixelBuffer:buffer];
+            CIContext *context = [CIContext context];
+            CGImageRef cgImg = [context createCGImage:ci fromRect:ci.extent];
+            UIImage *img = [UIImage imageWithCGImage:cgImg];
+            CGImageRelease(cgImg);
+            CVPixelBufferRelease(buffer);
+            return UIImageJPEGRepresentation(img, 0.95);
+        }
+    }
     return %orig;
 }
 
 - (struct CGImage *)CGImageRepresentation {
-    if (enabled && lastValidFrame) return lastValidFrame.CGImage;
-    return %orig;
-}
-
-- (struct CGImage *)previewCGImageRepresentation {
-    if (enabled && lastValidFrame) return lastValidFrame.CGImage;
+    if (enabled && videoOutput) {
+        CVPixelBufferRef buffer = [videoOutput copyPixelBufferForItemTime:[vcamPlayer.currentItem currentTime] itemTimeForDisplay:nil];
+        if (buffer) {
+            CIImage *ci = [CIImage imageWithCVPixelBuffer:buffer];
+            CGImageRef cg = [[CIContext context] createCGImage:ci fromRect:ci.extent];
+            CVPixelBufferRelease(buffer);
+            return cg;
+        }
+    }
     return %orig;
 }
 %end
@@ -85,6 +112,13 @@ static void setup_native_vcam(UIView *parent) {
     NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
     if (p) {
         enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
-        if (p[@"rtspURL"]) streamURL = p[@"rtspURL"];
+        if (p[@"rtspURL"]) {
+            NSString *raw = p[@"rtspURL"];
+            if (![raw hasSuffix:@"/index.m3u8"]) {
+                if ([raw hasSuffix:@"/"]) raw = [raw stringByAppendingString:@"index.m3u8"];
+                else raw = [raw stringByAppendingString:@"/index.m3u8"];
+            }
+            streamURL = raw;
+        }
     }
 }
