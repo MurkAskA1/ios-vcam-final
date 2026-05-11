@@ -1,4 +1,4 @@
-// VCAM V93.0: Connectivity HUD & Layer Cleanup
+// VCAM V94.0: The Final Strike - Force MJPEG & Low-Level Photo Hijack
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreImage/CoreImage.h>
@@ -21,23 +21,16 @@ static BOOL usingFallback = NO;
 
 void vcam_log(NSString *message) {
     NSString *logPath = @"/var/mobile/Documents/vcam_DEBUG.log";
-    NSString *formatted = [NSString stringWithFormat:@"%@\n", message];
+    NSString *timestamp = [NSDateFormatter localizedStringFromDate:[NSDate date] dateStyle:NSDateFormatterShortStyle timeStyle:NSDateFormatterLongStyle];
+    NSString *formatted = [NSString stringWithFormat:@"[%@] %@\n", timestamp, message];
     NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:logPath];
-    if (fh) {
-        [fh seekToEndOfFile];
-        [fh writeData:[formatted dataUsingEncoding:NSUTF8StringEncoding]];
-        [fh closeFile];
-    } else {
-        [formatted writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    }
+    if (fh) { [fh seekToEndOfFile]; [fh writeData:[formatted dataUsingEncoding:NSUTF8StringEncoding]]; [fh closeFile]; }
+    else { [formatted writeToFile:logPath atomically:YES encoding:NSUTF8StringEncoding error:nil]; }
 }
 
 void update_vcam_status(NSString *status, UIColor *color) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (statusLabel) {
-            statusLabel.text = [NSString stringWithFormat:@"VCAM: %@", status];
-            statusLabel.textColor = color;
-        }
+        if (statusLabel) { statusLabel.text = [NSString stringWithFormat:@"VCAM: %@", status]; statusLabel.textColor = color; }
     });
     vcam_log(status);
 }
@@ -50,7 +43,6 @@ void setup_status_bar(void) {
         overlayWindow.userInteractionEnabled = NO;
         overlayWindow.backgroundColor = [UIColor clearColor];
         overlayWindow.hidden = NO;
-
         statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 40, [UIScreen mainScreen].bounds.size.width - 20, 25)];
         statusLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
         statusLabel.textColor = [UIColor whiteColor];
@@ -63,11 +55,9 @@ void setup_status_bar(void) {
 }
 
 static CADisplayLink *frameGrabLink = nil;
-
 @interface VCamFrameGrabber : NSObject
 + (void)tick:(CADisplayLink *)link;
 @end
-
 @implementation VCamFrameGrabber
 + (void)tick:(CADisplayLink *)link {
     if (!vcamVideoOutput || !vcamPlayer.currentItem) return;
@@ -80,10 +70,7 @@ static CADisplayLink *frameGrabLink = nil;
             lastValidFrame = ci;
             CIContext *ctx = [CIContext contextWithOptions:nil];
             CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
-            if (cg) {
-                lastValidUIImage = [UIImage imageWithCGImage:cg];
-                CGImageRelease(cg);
-            }
+            if (cg) { lastValidUIImage = [UIImage imageWithCGImage:cg]; CGImageRelease(cg); }
         }
         CVPixelBufferRelease(pb);
     }
@@ -96,26 +83,18 @@ static void start_grabbing(void) {
     [frameGrabLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 }
 
-@interface VCamFreezeLayer : CALayer
-@end
+@interface VCamFreezeLayer : CALayer @end
 @implementation VCamFreezeLayer
 - (void)display {
     if (!lastValidFrame) return;
     CGImageRef cg = [[CIContext contextWithOptions:nil] createCGImage:lastValidFrame fromRect:lastValidFrame.extent];
-    if (cg) {
-        self.contents = (__bridge id)cg;
-        CGImageRelease(cg);
-    }
+    if (cg) { self.contents = (__bridge id)cg; CGImageRelease(cg); }
 }
 @end
 
 static VCamFreezeLayer *freezeLayer = nil;
 static void show_freeze(CALayer *parent, CGRect bounds) {
-    if (!freezeLayer) {
-        freezeLayer = [VCamFreezeLayer layer];
-        freezeLayer.zPosition = 998;
-        freezeLayer.contentsGravity = kCAGravityResizeAspectFill;
-    }
+    if (!freezeLayer) { freezeLayer = [VCamFreezeLayer layer]; freezeLayer.zPosition = 998; freezeLayer.contentsGravity = kCAGravityResizeAspectFill; }
     freezeLayer.frame = bounds;
     if (freezeLayer.superlayer != parent) [parent addSublayer:freezeLayer];
     [freezeLayer setNeedsDisplay];
@@ -123,25 +102,14 @@ static void show_freeze(CALayer *parent, CGRect bounds) {
 
 static BOOL is_front(AVCaptureVideoPreviewLayer *l) {
     AVCaptureSession *s = l.session;
-    for (AVCaptureInput *i in s.inputs) {
-        if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == AVCaptureDevicePositionFront) return YES;
-    }
+    for (AVCaptureInput *i in s.inputs) { if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == AVCaptureDevicePositionFront) return YES; }
     return NO;
 }
 
 static void setup_player(NSString *u) {
-    if (vcamPlayer) {
-        [vcamPlayer pause];
-        [vcamLayer removeFromSuperlayer];
-        vcamPlayer = nil;
-        vcamLayer = nil;
-    }
-    
-    // Diagnostic Status: Show current target IP
+    if (vcamPlayer) { [vcamPlayer pause]; [vcamLayer removeFromSuperlayer]; vcamPlayer = nil; vcamLayer = nil; }
     NSURL *url = [NSURL URLWithString:u];
-    NSString *ipStr = [u containsString:@"192.168"] ? url.host : @"MJPEG";
-    update_vcam_status([NSString stringWithFormat:@"CONN [%@]...", ipStr], [UIColor yellowColor]);
-    
+    update_vcam_status([NSString stringWithFormat:@"CONN [%@]...", url.host], [UIColor yellowColor]);
     AVPlayerItem *item = [AVPlayerItem playerItemWithURL:url];
     vcamVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
     [item addOutput:vcamVideoOutput];
@@ -150,13 +118,13 @@ static void setup_player(NSString *u) {
     vcamLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
     [vcamPlayer play];
     start_grabbing();
-
     if (!usingFallback) {
         [fallbackTimer invalidate];
-        fallbackTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 repeats:NO block:^(NSTimer *timer) {
+        fallbackTimer = [NSTimer scheduledTimerWithTimeInterval:3.0 repeats:NO block:^(NSTimer *timer) {
             if (usingFallback || vcamPlayer.currentItem.status == AVPlayerItemStatusReadyToPlay) return;
             usingFallback = YES;
             NSString *fb = [rtspURL stringByReplacingOccurrencesOfString:@"/index.m3u8" withString:@""];
+            vcam_log(@"V94: HLS Timeout -> Force MJPEG");
             setup_player(fb);
         }];
     }
@@ -169,21 +137,16 @@ static void setup_player(NSString *u) {
     if (!vcamPlayer) setup_player(rtspURL);
     if (vcamLayer && vcamLayer.superlayer != self) [self addSublayer:vcamLayer];
     if (vcamLayer) {
-        vcamLayer.frame = self.bounds;
-        vcamLayer.zPosition = 999;
+        vcamLayer.frame = self.bounds; vcamLayer.zPosition = 999;
         BOOL f = is_front(self);
         vcamLayer.transform = f ? CATransform3DMakeAffineTransform(CGAffineTransformMakeScale(-1, 1)) : CATransform3DIdentity;
         if (freezeLayer) freezeLayer.transform = vcamLayer.transform;
-        
         BOOL ready = vcamPlayer.status == AVPlayerStatusReadyToPlay && vcamPlayer.currentItem.status == AVPlayerItemStatusReadyToPlay;
         if (!ready) {
-            if (lastValidFrame) {
-                show_freeze(self, self.bounds);
-                update_vcam_status(@"SIGNAL DROPPED - FREEZING", [UIColor orangeColor]);
-            }
+            if (lastValidFrame) { show_freeze(self, self.bounds); update_vcam_status(@"SIGNAL LOST - FREEZING", [UIColor orangeColor]); }
         } else {
             if (freezeLayer) [freezeLayer removeFromSuperlayer];
-            update_vcam_status(f ? @"STREAMING (FRONT)" : @"STREAMING (BACK)", [UIColor greenColor]);
+            update_vcam_status(f ? @"STREAMING (FRONT)" : @"STREAMING ACTIVE", [UIColor greenColor]);
         }
     }
 }
@@ -191,9 +154,7 @@ static void setup_player(NSString *u) {
 
 %hook AVCapturePhotoOutput
 - (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)s delegate:(id)d {
-    if (enabled && lastValidUIImage) {
-        objc_setAssociatedObject(s, "vcamSnapshot", lastValidUIImage, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
+    if (enabled && lastValidUIImage) { objc_setAssociatedObject(s, "vcamSnapshot", lastValidUIImage, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
     %orig;
 }
 %end
@@ -201,12 +162,10 @@ static void setup_player(NSString *u) {
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
     UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamSnapshot");
-    if (snap) {
-        vcam_log(@"Photo Hijack: Injecting virtual frame");
-        return UIImageJPEGRepresentation(snap, 0.9);
-    }
+    if (snap) { vcam_log(@"Low-Level Photo Hijack Active"); return UIImageJPEGRepresentation(snap, 0.9); }
     return %orig;
 }
+- (CGImageRef)CGImageRepresentation { UIImage *snap = objc_getAssociatedObject(self.resolvedSettings, "vcamSnapshot"); if (snap) return snap.CGImage; return %orig; }
 %end
 
 %hook AVCaptureSession
@@ -215,9 +174,6 @@ static void setup_player(NSString *u) {
 
 %ctor {
     NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
-    if (p) {
-        enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
-        if (p[@"rtspURL"]) rtspURL = p[@"rtspURL"];
-    }
-    vcam_log(@"VCAM V93.0 Initialized");
+    if (p) { enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES; if (p[@"rtspURL"]) rtspURL = p[@"rtspURL"]; }
+    vcam_log(@"VCAM V94.0 Ready");
 }
