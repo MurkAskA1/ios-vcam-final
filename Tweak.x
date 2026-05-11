@@ -1,4 +1,4 @@
-// VCAM V119.1: The Web Master - WebView Stream Engine (Fixed Build Errors)
+// VCAM V120.0: The Invisible Ghost - Touch Passthrough & Clean Web UI
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -10,24 +10,29 @@ static UIWindow *vcamWindow = nil;
 static WKWebView *vcamWebView = nil;
 static UIImage *snapshotForPhoto = nil;
 
-@interface VCamSnapshoter : NSObject @end
-@implementation VCamSnapshoter
-+ (void)takeSnap {
-    if (!vcamWebView) return;
-    WKSnapshotConfiguration *config = [[WKSnapshotConfiguration alloc] init];
-    [vcamWebView takeSnapshotWithConfiguration:config completionHandler:^(UIImage *img, NSError *err) {
-        if (img) snapshotForPhoto = img;
-    }];
+@interface VCamPassthroughWindow : UIWindow @end
+@implementation VCamPassthroughWindow
+// Allow touches to pass through to the camera app underneath
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hitView = [super hitTest:point withEvent:event];
+    if (hitView == self || hitView == self.rootViewController.view) return nil;
+    return hitView;
 }
+@end
+
+@interface VCamRootVC : UIViewController @end
+@implementation VCamRootVC
+- (BOOL)prefersStatusBarHidden { return YES; }
 @end
 
 static void setup_web_engine(void) {
     if (vcamWindow) return;
     dispatch_async(dispatch_get_main_queue(), ^{
-        vcamWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        vcamWindow = [[VCamPassthroughWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
         vcamWindow.windowLevel = UIWindowLevelAlert + 5000;
-        vcamWindow.userInteractionEnabled = NO;
+        vcamWindow.userInteractionEnabled = YES; // Window itself accepts touches to pass them
         vcamWindow.backgroundColor = [UIColor clearColor];
+        vcamWindow.rootViewController = [[VCamRootVC alloc] init];
         vcamWindow.hidden = NO;
         
         WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
@@ -37,13 +42,22 @@ static void setup_web_engine(void) {
         vcamWebView = [[WKWebView alloc] initWithFrame:vcamWindow.bounds configuration:config];
         vcamWebView.backgroundColor = [UIColor clearColor];
         vcamWebView.opaque = NO;
+        vcamWebView.userInteractionEnabled = NO; // Webview won't steal touches from Shutter button
         vcamWebView.scrollView.scrollEnabled = NO;
-        [vcamWindow addSubview:vcamWebView];
         
+        // Inject CSS to hide all video controls and force fullscreen
+        NSString *css = @"video { width: 100vw !important; height: 100vh !important; object-fit: cover !important; } .controls, button, .overlay { display: none !important; }";
+        WKUserScript *script = [[WKUserScript alloc] initWithSource:[NSString stringWithFormat:@"var style = document.createElement('style'); style.innerHTML = '%@'; document.head.appendChild(style);", css] injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
+        [vcamWebView.configuration.userContentController addUserScript:script];
+        
+        [vcamWindow.rootViewController.view addSubview:vcamWebView];
         [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
         
         [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
-            [VCamSnapshoter takeSnap];
+            WKSnapshotConfiguration *sc = [[WKSnapshotConfiguration alloc] init];
+            [vcamWebView takeSnapshotWithConfiguration:sc completionHandler:^(UIImage *img, NSError *err) {
+                if (img) snapshotForPhoto = img;
+            }];
         }];
     });
 }
@@ -54,22 +68,16 @@ static void setup_web_engine(void) {
     if (enabled) {
         setup_web_engine();
         vcamWindow.hidden = NO;
-        
-        AVCaptureSession *s = [self session];
-        BOOL f = NO;
+        AVCaptureSession *s = [self session]; BOOL f = NO;
         if (s) {
             for (AVCaptureInput *i in [s inputs]) {
                 if ([i isKindOfClass:[AVCaptureDeviceInput class]]) {
-                    AVCaptureDeviceInput *di = (AVCaptureDeviceInput *)i;
-                    if (di.device.position == AVCaptureDevicePositionFront) {
-                        f = YES;
-                        break;
-                    }
+                    if (((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; }
                 }
             }
         }
         vcamWebView.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
-        [self setOpacity:0.01];
+        [self setOpacity:0.01]; // Hide real lens
     }
 }
 %end
