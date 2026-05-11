@@ -1,36 +1,45 @@
-// VCAM V136.0: The Backstage Engine - Direct View Injection & No UI Image Trick
+// VCAM V137.0: The Pro Master - Direct Engine & Button Preservation
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
-static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
+static NSString *streamURL = @"http://192.168.1.44:8889/live/stream/index.m3u8";
 static WKWebView *vcamWebView = nil;
-static UIImage *lastGlobalSnap = nil;
+static UIImage *snapshotForPhoto = nil;
 
-static void setup_backstage_engine(UIView *parent) {
+static void setup_pro_engine(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
     
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     config.allowsInlineMediaPlayback = YES;
+    config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     
     vcamWebView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     vcamWebView.backgroundColor = [UIColor blackColor];
+    vcamWebView.opaque = YES;
     vcamWebView.userInteractionEnabled = NO;
     vcamWebView.scrollView.scrollEnabled = NO;
     
-    // Using <img> tag trick to avoid ANY video player UI (no pause buttons, etc.)
-    NSString *html = [NSString stringWithFormat:@"<html><body style='margin:0;padding:0;background:black;overflow:hidden;'><img src='%@' style='width:100vw;height:100vh;object-fit:cover;'></body></html>", streamURL];
-    [vcamWebView loadHTMLString:html baseURL:nil];
+    // BRUTAL JAVASCRIPT: Kill all UI, Auto-Play, and Force Fullscreen every 100ms
+    NSString *js = @"setInterval(function() { "
+                    "var v = document.querySelector('video'); if(v) { v.play(); v.controls = false; v.style.width='100vw'; v.style.height='100vh'; v.style.objectFit='cover'; v.style.position='fixed'; v.style.top='0'; v.style.left='0'; } "
+                    "var ui = document.querySelectorAll('button, .controls, .overlay, .ytp-chrome-bottom'); "
+                    "for(var i=0; i<ui.length; i++) { ui[i].style.display='none'; ui[i].style.opacity='0'; } "
+                    "}, 100);";
     
-    // Insert as the VERY FIRST subview to stay BEHIND all camera buttons
+    WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
+    [vcamWebView.configuration.userContentController addUserScript:script];
+    
+    // Logic: Insert at index 0 (Background) and hide the real camera layer
     [parent insertSubview:vcamWebView atIndex:0];
+    [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
     
-    [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:YES block:^(NSTimer *t) {
+    [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
         [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
-            if (img) lastGlobalSnap = img;
+            if (img) snapshotForPhoto = img;
         }];
     }];
 }
@@ -43,16 +52,16 @@ static void setup_backstage_engine(UIView *parent) {
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_backstage_engine(p);
+            setup_pro_engine(p);
             vcamWebView.frame = p.bounds;
-            [p sendSubviewToBack:vcamWebView]; // Extra safety for buttons
+            [p sendSubviewToBack:vcamWebView]; // Ensure it stays behind buttons
             
             AVCaptureSession *s = self.session; BOOL f = NO;
             if (s) {
                 for (id i in s.inputs) { if ([i isKindOfClass:[AVCaptureDeviceInput class]] && ((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; } }
             }
             vcamWebView.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
-            [self setOpacity:0.0];
+            [self setOpacity:0.0]; // Hide real lens feed
         }
     }
 }
@@ -60,17 +69,17 @@ static void setup_backstage_engine(UIView *parent) {
 
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && lastGlobalSnap) return UIImageJPEGRepresentation(lastGlobalSnap, 0.95);
+    if (enabled && snapshotForPhoto) return UIImageJPEGRepresentation(snapshotForPhoto, 0.95);
     return %orig;
 }
-- (struct CGImage *)CGImageRepresentation { if (enabled && lastGlobalSnap) return lastGlobalSnap.CGImage; return %orig; }
-- (struct CGImage *)previewCGImageRepresentation { if (enabled && lastGlobalSnap) return lastGlobalSnap.CGImage; return %orig; }
+- (struct CGImage *)CGImageRepresentation { if (enabled && snapshotForPhoto) return snapshotForPhoto.CGImage; return %orig; }
+- (struct CGImage *)previewCGImageRepresentation { if (enabled && snapshotForPhoto) return snapshotForPhoto.CGImage; return %orig; }
 %end
 
 %ctor {
     NSDictionary *p = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.vcampro.plist"];
     if (p) {
         enabled = p[@"enabled"] ? [p[@"enabled"] boolValue] : YES;
-        if (p[@"rtspURL"]) streamURL = [p[@"rtspURL"] stringByReplacingOccurrencesOfString:@"/index.m3u8" withString:@""];
+        if (p[@"rtspURL"]) streamURL = p[@"rtspURL"];
     }
 }
