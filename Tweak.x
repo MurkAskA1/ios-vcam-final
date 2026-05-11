@@ -1,4 +1,4 @@
-// VCAM V152.0: The Ultimate Fix - Raw Text Only
+// VCAM V153.0: The Ultimate Stealth - WebView Integration with Touch Passthrough
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -9,26 +9,29 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_final(UIView *parent) {
+static void setup_vcam_stealth(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     config.allowsInlineMediaPlayback = YES;
+    config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     
     vcamWebView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     vcamWebView.backgroundColor = [UIColor blackColor];
+    vcamWebView.opaque = YES;
     vcamWebView.userInteractionEnabled = NO;
     vcamWebView.scrollView.scrollEnabled = NO;
 
-    NSString *js = @"var style = document.createElement('style'); style.innerHTML = 'body, html, img, video { margin: 0 !important; padding: 0 !important; width: 100vw !important; height: 100vh !important; object-fit: cover !important; background: black !important; overflow: hidden !important; } .vjs-control-bar, .vjs-big-play-button, button, header, footer { display: none !important; }'; document.head.appendChild(style);";
+    NSString *js = @"var style = document.createElement('style'); style.innerHTML = 'body, html, img, video { margin: 0 !important; padding: 0 !important; width: 100vw !important; height: 100vh !important; object-fit: cover !important; background: black !important; overflow: hidden !important; } .vjs-control-bar, .vjs-big-play-button, button, header, footer, .controls { display: none !important; }'; document.head.appendChild(style);";
     WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
     [config.userContentController addUserScript:script];
 
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
     [parent insertSubview:vcamWebView atIndex:0];
 
-    [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
+    [NSTimer scheduledTimerWithTimeInterval:0.4 repeats:YES block:^(NSTimer *t) {
+        if (!enabled) return;
         [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
             if (img) sharedSnapshot = img;
         }];
@@ -42,17 +45,18 @@ static void setup_vcam_final(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_final(p);
+            setup_vcam_stealth(p);
             vcamWebView.frame = p.bounds;
+            [p sendSubviewToBack:vcamWebView];
             
             AVCaptureSession *s = self.session;
-            BOOL f = NO;
+            BOOL isFront = NO;
             if (s) {
                 for (id i in s.inputs) {
-                    if ([i isKindOfClass:objc_getClass("AVCaptureDeviceInput")] && ((AVCaptureDeviceInput *)i).device.position == 2) { f = YES; break; }
+                    if ([i isKindOfClass:objc_getClass("AVCaptureDeviceInput")] && ((AVCaptureDeviceInput *)i).device.position == 2) { isFront = YES; break; }
                 }
             }
-            vcamWebView.transform = f ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
+            vcamWebView.transform = isFront ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
             [self setOpacity:0.0];
         }
     }
