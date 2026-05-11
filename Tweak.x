@@ -1,4 +1,4 @@
-// VCAM V158.0: The Final Victory - Fixed Build & Full Integration
+// VCAM V159.0: The Final Victory - Fixed Build & Full Integration
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -9,7 +9,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *snapshotForHijack = nil;
 
-static void setup_vcam_v158(UIView *parent) {
+static void setup_vcam_v159(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -45,7 +45,7 @@ static void setup_vcam_v158(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v158(p);
+            setup_vcam_v159(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             
