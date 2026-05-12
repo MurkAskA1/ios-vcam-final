@@ -1,4 +1,4 @@
-// VCAM V185.0: The Surgical Ghost - Targeted Hijack without Gallery Flooding
+// VCAM V186.0: The Precise Injector - Fixing Gallery Flooding
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -10,7 +10,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v185(UIView *parent) {
+static void setup_vcam_v186(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -26,7 +26,7 @@ static void setup_vcam_v185(UIView *parent) {
 
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
 
-    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black !important; } .vjs-control-bar, .vjs-big-play-button, .controls, .play-button, .pause-indicator { display: none !important; }'; document.head.appendChild(s); setInterval(function(){ var v = document.querySelector('video'); if(v) v.play(); }, 50);";
+    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black !important; } .vjs-control-bar, .vjs-big-play-button, .controls, .play-button { display: none !important; }'; document.head.appendChild(s); setInterval(function(){ var v = document.querySelector('video'); if(v) v.play(); }, 50);";
     WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
     [vcamWebView.configuration.userContentController addUserScript:script];
 
@@ -40,18 +40,15 @@ static void setup_vcam_v185(UIView *parent) {
     }];
 }
 
-// 1. DISABLE HARDWARE THUMBNAILS (Prevents real frames from leaking into cache)
-%hook AVCapturePhotoSettings
-- (NSArray *)availableEmbeddedThumbnailPhotoCodecTypes { return @[]; }
-%end
-
-// 2. SURGICAL IMAGE MANAGER HIJACK (Only for very new assets)
+// 1. SURGICAL IMAGE MANAGER HIJACK (Prevent global flooding)
 %hook PHImageManager
 - (int)requestImageForAsset:(PHAsset *)asset targetSize:(struct CGSize)targetSize contentMode:(int)contentMode options:(id)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
-    if (enabled && sharedSnapshot && resultHandler) {
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier];
+    // Only hijack if requested by Camera app specifically for the thumbnail preview
+    if (enabled && sharedSnapshot && [bundleID isEqualToString:@"com.apple.camera"]) {
         NSTimeInterval age = [[NSDate date] timeIntervalSinceDate:asset.creationDate];
-        if (age < 15.0) { // Only hijack if the photo was taken in the last 15 seconds
-            resultHandler(sharedSnapshot, nil);
+        if (age < 10.0) { // Only hijack extremely new photos
+            if (resultHandler) resultHandler(sharedSnapshot, nil);
             return 1337;
         }
     }
@@ -59,11 +56,26 @@ static void setup_vcam_v185(UIView *parent) {
 }
 %end
 
-// 3. TARGETED CAMERA UI HIJACK
+// 2. TARGETED CAMERA UI HIJACK
 %hook CAMImageWell
 - (void)setThumbnailImage:(UIImage *)image {
-    if (enabled && sharedSnapshot) %orig(sharedSnapshot);
-    else %orig;
+    if (enabled && sharedSnapshot && [[[NSBundle mainBundle] bundleIdentifier] isEqualToString:@"com.apple.camera"]) {
+        %orig(sharedSnapshot);
+    } else {
+        %orig;
+    }
+}
+%end
+
+// 3. CAPTURE DATA HIJACK
+%hook AVCapturePhoto
+- (NSData *)fileDataRepresentation {
+    if (enabled && sharedSnapshot) return UIImageJPEGRepresentation(sharedSnapshot, 0.95);
+    return %orig;
+}
+- (struct CGImage *)CGImageRepresentation {
+    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
+    return %orig;
 }
 %end
 
@@ -75,24 +87,12 @@ static void setup_vcam_v185(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v185(p);
+            setup_vcam_v186(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             [self setOpacity:0.0];
         }
     }
-}
-%end
-
-// 5. CAPTURE DATA HIJACK
-%hook AVCapturePhoto
-- (NSData *)fileDataRepresentation {
-    if (enabled && sharedSnapshot) return UIImageJPEGRepresentation(sharedSnapshot, 0.95);
-    return %orig;
-}
-- (struct CGImage *)CGImageRepresentation {
-    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
-    return %orig;
 }
 %end
 
