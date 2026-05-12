@@ -1,4 +1,4 @@
-// VCAM V199.0: Global Perfection
+// VCAM V200.0: The Ultimate Global Perfection
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -10,7 +10,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *lastSnapshot = nil;
 
-static void setup_vcam_global(UIView *parent) {
+static void init_vcam_v200(UIView *parent) {
     if (!parent) return;
     if (vcamWebView && vcamWebView.superview == parent) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
@@ -53,7 +53,7 @@ static void setup_vcam_global(UIView *parent) {
     if (enabled) {
         UIView *p = (UIView *)self.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_global(p);
+            init_vcam_v200(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             [self setOpacity:0.0];
