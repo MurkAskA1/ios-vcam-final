@@ -1,4 +1,4 @@
-// VCAM V181.0: The Surgical Strike - Live Hijack without Gallery Overwrite
+// VCAM V182.0: The Cache Killer - Deep Hardware-to-File Hijack
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -8,9 +8,9 @@
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
-static UIImage *liveSnapshot = nil;
+static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v181(UIView *parent) {
+static void setup_vcam_v182(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -21,7 +21,6 @@ static void setup_vcam_v181(UIView *parent) {
     vcamWebView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     vcamWebView.backgroundColor = [UIColor blackColor];
     vcamWebView.userInteractionEnabled = NO;
-    vcamWebView.scrollView.scrollEnabled = NO;
     vcamWebView.opaque = NO;
 
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
@@ -32,15 +31,48 @@ static void setup_vcam_v181(UIView *parent) {
 
     [parent insertSubview:vcamWebView atIndex:0];
 
-    [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
+    [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *t) {
         if (!enabled) return;
         [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
-            if (img) liveSnapshot = img;
+            if (img) sharedSnapshot = img;
         }];
     }];
 }
 
-// 1. SURGICAL PREVIEW HIJACK
+// 1. DISABLE HARDWARE THUMBNAILS (Force software generation from our fake image)
+%hook AVCapturePhotoSettings
+- (NSArray *)availableEmbeddedThumbnailPhotoCodecTypes { return @[]; }
+%end
+
+// 2. RESOURCE DATA HIJACK (The "Filmstrip" leak fix)
+%hook PHAssetChangeRequest
+- (void)addResourceWithType:(PHAssetResourceType)type data:(NSData *)data options:(id)options {
+    if (enabled && sharedSnapshot && (type == PHAssetResourceTypePhoto || type == PHAssetResourceTypeAlternatePhoto)) {
+        NSData *fakeData = UIImageJPEGRepresentation(sharedSnapshot, 0.95);
+        %orig(type, fakeData, options);
+    } else {
+        %orig;
+    }
+}
+%end
+
+// 3. PHOTO RESULT HIJACK
+%hook AVCapturePhoto
+- (NSData *)fileDataRepresentation {
+    if (enabled && sharedSnapshot) return UIImageJPEGRepresentation(sharedSnapshot, 0.95);
+    return %orig;
+}
+- (struct CGImage *)CGImageRepresentation {
+    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
+    return %orig;
+}
+- (struct CGImage *)previewCGImageRepresentation {
+    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
+    return %orig;
+}
+%end
+
+// 4. PREVIEW AND UI HIJACK
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
@@ -48,42 +80,13 @@ static void setup_vcam_v181(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v181(p);
+            setup_vcam_v182(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             [self setOpacity:0.0];
         }
     }
 }
-%end
-
-// 2. SURGICAL PHOTO CAPTURE HIJACK
-%hook AVCapturePhoto
-- (NSData *)fileDataRepresentation {
-    if (enabled && liveSnapshot) return UIImageJPEGRepresentation(liveSnapshot, 0.95);
-    return %orig;
-}
-- (struct CGImage *)CGImageRepresentation {
-    if (enabled && liveSnapshot) return liveSnapshot.CGImage;
-    return %orig;
-}
-- (struct CGImage *)previewCGImageRepresentation {
-    if (enabled && liveSnapshot) return liveSnapshot.CGImage;
-    return %orig;
-}
-%end
-
-// 3. TARGETED CAMERA UI HIJACK (Only in Camera App)
-%hook CAMImageWell
-- (void)setThumbnailImage:(UIImage *)image {
-    if (enabled && liveSnapshot) %orig(liveSnapshot);
-    else %orig;
-}
-%end
-
-// 4. DEVICE SPOOFING FOR BANKS
-%hook AVCaptureDevice
-- (NSString *)localizedName { return enabled ? @"Back Camera" : %orig; }
 %end
 
 %ctor {
