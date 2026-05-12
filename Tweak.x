@@ -1,4 +1,4 @@
-// VirtualCamPro V216.0: The Ultimate System Hijacker
+// VirtualCamPro V217.0: The God Mode Hijacker (Mediaserverd Fix)
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
@@ -11,22 +11,75 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static UIImage *globalLastImage = nil;
 static CVPixelBufferRef globalLastPixelBuffer = NULL;
 
-// --- Core Hijack: Replacing Device Input ---
+// --- Direct Preference Loading (Rootless Fix) ---
+static void load_prefs() {
+    NSDictionary *dict = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
+    if (!dict) {
+        // Try rootless path
+        dict = [NSDictionary dictionaryWithContentsOfFile:@"/var/jb/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
+    }
+    
+    if (dict) {
+        enabled = [dict[@"enabled"] ?: @YES boolValue];
+        NSString *url = dict[@"rtspURL"];
+        if (url && url.length > 5) streamURL = url;
+    }
+}
+
+// --- Utility: Image to PixelBuffer ---
+static CVPixelBufferRef pixelBufferFromImage(UIImage *image) {
+    if (!image) return NULL;
+    CGImageRef cgImage = image.CGImage;
+    CVPixelBufferRef pxbuffer = NULL;
+    NSDictionary *options = @{(id)kCVPixelBufferCGImageCompatibilityKey: @YES, (id)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES};
+    CVPixelBufferCreate(kCFAllocatorDefault, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage), kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)options, &pxbuffer);
+    CVPixelBufferLockBaseAddress(pxbuffer, 0);
+    void *pxdata = CVPixelBufferGetBaseAddress(pxbuffer);
+    CGContextRef context = CGBitmapContextCreate(pxdata, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage), 8, CVPixelBufferGetBytesPerRow(pxbuffer), CGColorSpaceCreateDeviceRGB(), (CGBitmapInfo)kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+    CGContextDrawImage(context, CGRectMake(0, 0, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage)), cgImage);
+    CGContextRelease(context);
+    CVPixelBufferUnlockBaseAddress(pxbuffer, 0);
+    return pxbuffer;
+}
+
+// --- Global Stream Sync ---
+static void start_global_sync() {
+    static BOOL isRunning = NO;
+    if (isRunning) return;
+    isRunning = YES;
+    
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+        while (enabled) {
+            @autoreleasepool {
+                NSData *data = [NSData dataWithContentsOfURL:[NSURL URLWithString:streamURL]];
+                if (data) {
+                    UIImage *img = [UIImage imageWithData:data];
+                    if (img) {
+                        globalLastImage = img;
+                        CVPixelBufferRef old = globalLastPixelBuffer;
+                        globalLastPixelBuffer = pixelBufferFromImage(img);
+                        if (old) CFRelease(old);
+                    }
+                }
+            }
+            [NSThread sleepForTimeInterval:0.04];
+        }
+        isRunning = NO;
+    });
+}
+
+// --- THE BIG HOOK: AVCaptureSession everywhere ---
 
 %hook AVCaptureSession
-- (void)addInput:(AVCaptureInput *)input {
-    if (enabled && [input isKindOfClass:[AVCaptureDeviceInput class]]) {
-        AVCaptureDeviceInput *deviceInput = (AVCaptureDeviceInput *)input;
-        if (deviceInput.device.position == AVCaptureDevicePositionBack || deviceInput.device.position == AVCaptureDevicePositionFront) {
-            NSLog(@"[VirtualCamPro] Blocking real camera input for position: %ld", (long)deviceInput.device.position);
-            // We don't return, we just let it add, but we will block the data downstream
-        }
+- (void)startRunning {
+    %orig;
+    if (enabled) {
+        NSLog(@"[VirtualCamPro] Camera Session Started in App: %@", [NSBundle mainBundle].bundleIdentifier);
     }
-    %orig(input);
 }
 %end
 
-// --- Data Stream Hijack (The "Everywhere" Fix) ---
+// --- Data Injection (Banks/Telegram/Safari) ---
 
 @interface VCAPDelegateWrapper : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 @property (nonatomic, weak) id originalDelegate;
@@ -56,7 +109,7 @@ static CVPixelBufferRef globalLastPixelBuffer = NULL;
 
 %hook AVCaptureVideoDataOutput
 - (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)delegate queue:(dispatch_queue_t)sampleBufferCallbackQueue {
-    if (enabled) {
+    if (enabled && delegate && ![delegate isKindOfClass:[VCAPDelegateWrapper class]]) {
         VCAPDelegateWrapper *wrapper = [[VCAPDelegateWrapper alloc] init];
         wrapper.originalDelegate = delegate;
         %orig(wrapper, sampleBufferCallbackQueue);
@@ -66,37 +119,38 @@ static CVPixelBufferRef globalLastPixelBuffer = NULL;
 }
 %end
 
-// --- Visual Hijack (Preview Everywhere) ---
+// --- Visual Preview Hijack ---
 
 %hook AVCaptureVideoPreviewLayer
-- (void)setSession:(AVCaptureSession *)session {
-    %orig(session);
+- (void)layoutSublayers {
+    %orig;
     if (enabled) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            UIView *parent = nil;
-            if ([self.delegate isKindOfClass:[UIView class]]) parent = (UIView *)self.delegate;
-            if (parent) {
-                UIImageView *vcamView = (UIImageView *)[parent viewWithTag:9933];
-                if (!vcamView) {
-                    vcamView = [[UIImageView alloc] initWithFrame:parent.bounds];
-                    vcamView.backgroundColor = [UIColor blackColor];
-                    vcamView.contentMode = UIViewContentModeScaleAspectFill;
-                    vcamView.tag = 9933;
-                    vcamView.userInteractionEnabled = NO;
-                    [parent addSubview:vcamView];
-                    [parent bringSubviewToFront:vcamView];
-                }
+        UIView *parent = nil;
+        if ([self.delegate isKindOfClass:[UIView class]]) parent = (UIView *)self.delegate;
+        else if ([self.superlayer.delegate isKindOfClass:[UIView class]]) parent = (UIView *)self.superlayer.delegate;
+
+        if (parent) {
+            UIImageView *vcamView = (UIImageView *)[parent viewWithTag:9944];
+            if (!vcamView) {
+                vcamView = [[UIImageView alloc] initWithFrame:parent.bounds];
+                vcamView.backgroundColor = [UIColor blackColor];
+                vcamView.contentMode = UIViewContentModeScaleAspectFill;
+                vcamView.tag = 9944;
+                vcamView.userInteractionEnabled = NO;
+                [parent addSubview:vcamView];
+                [parent bringSubviewToFront:vcamView];
                 
                 [NSTimer scheduledTimerWithTimeInterval:0.04 repeats:YES block:^(NSTimer *t) {
                     if (enabled && globalLastImage) vcamView.image = globalLastImage;
                 }];
             }
-        });
+            vcamView.frame = parent.bounds;
+        }
     }
 }
 %end
 
-// --- Photo & Gallery Hijack ---
+// --- Photo Hijack ---
 
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
@@ -112,55 +166,10 @@ static CVPixelBufferRef globalLastPixelBuffer = NULL;
 }
 %end
 
-// --- Global Frame Sync ---
-
-static void start_global_sync() {
-    static BOOL isRunning = NO;
-    if (isRunning) return;
-    isRunning = YES;
-    
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
-        while (enabled) {
-            @autoreleasepool {
-                NSData *data = [NSData dataWithContentsOfURL:[NSURL URLWithString:streamURL]];
-                if (data) {
-                    UIImage *img = [UIImage imageWithData:data];
-                    if (img) {
-                        globalLastImage = img;
-                        CVPixelBufferRef old = globalLastPixelBuffer;
-                        
-                        // Convert to PixelBuffer for injection
-                        CGImageRef cgImage = img.CGImage;
-                        CVPixelBufferRef pxbuffer = NULL;
-                        NSDictionary *options = @{(id)kCVPixelBufferCGImageCompatibilityKey: @YES, (id)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES};
-                        CVPixelBufferCreate(kCFAllocatorDefault, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage), kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)options, &pxbuffer);
-                        CVPixelBufferLockBaseAddress(pxbuffer, 0);
-                        void *pxdata = CVPixelBufferGetBaseAddress(pxbuffer);
-                        CGContextRef context = CGBitmapContextCreate(pxdata, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage), 8, CVPixelBufferGetBytesPerRow(pxbuffer), CGColorSpaceCreateDeviceRGB(), (CGBitmapInfo)kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
-                        CGContextDrawImage(context, CGRectMake(0, 0, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage)), cgImage);
-                        CGContextRelease(context);
-                        CVPixelBufferUnlockBaseAddress(pxbuffer, 0);
-                        
-                        globalLastPixelBuffer = pxbuffer;
-                        if (old) CFRelease(old);
-                    }
-                }
-            }
-            [NSThread sleepForTimeInterval:0.04];
-        }
-        isRunning = NO;
-    });
-}
-
 %ctor {
-    // Fix the suite name to match the preference bundle exactly
-    NSUserDefaults *defs = [[NSUserDefaults alloc] initWithSuiteName:@"com.murkaska.virtualcampro"];
-    enabled = [defs objectForKey:@"enabled"] ? [defs boolForKey:@"enabled"] : YES;
-    NSString *str = [defs stringForKey:@"rtspURL"];
-    if (str && str.length > 5) streamURL = str;
-
+    load_prefs();
     if (enabled) {
         start_global_sync();
     }
-    NSLog(@"[VirtualCamPro] Ultimate System Hijacker V216.0 Loaded");
+    NSLog(@"[VirtualCamPro] V217.0 Stealth Loaded in %@", [NSBundle mainBundle].bundleIdentifier);
 }
