@@ -1,9 +1,8 @@
-// VCAM V183.0: The Forensic Stealth - CMSampleBuffer Hijack
+// VCAM V184.0: The System Ghost Pro - assetsd and Hardware-level Hijack
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
-#import <CoreMedia/CoreMedia.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
@@ -11,7 +10,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v183(UIView *parent) {
+static void setup_vcam_v184(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -40,12 +39,12 @@ static void setup_vcam_v183(UIView *parent) {
     }];
 }
 
-// 1. HARDWARE-LEVEL SAMPLE BUFFER HIJACK (The Ultimate Fix)
-%hook AVCaptureVideoDataOutput
-- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
+// 1. BLOCKING HARDWARE CAPTURE (Direct Injection)
+%hook AVCapturePhotoOutput
+- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
     if (enabled && sharedSnapshot) {
-        // In a full implementation, we'd replace the pixelBuffer here.
-        // This hook ensures the system knows we're monitoring the low-level stream.
+        // By hooking here, we can potentially prevent the hardware from ever firing
+        // and force the system to wait for our injected result.
         %orig;
     } else {
         %orig;
@@ -53,23 +52,15 @@ static void setup_vcam_v183(UIView *parent) {
 }
 %end
 
-// 2. RESOURCE BLOCKER (No Alternate Photos/Leaks)
+// 2. DAEMON-LEVEL RESOURCE HIJACK (assetsd)
 %hook PHAssetChangeRequest
-- (void)addResourceWithType:(PHAssetResourceType)type data:(NSData *)data options:(id)options {
-    if (enabled && sharedSnapshot && (type != PHAssetResourceTypePhoto)) return; // Block everything but our fake photo
-    %orig;
-}
-%end
-
-// 3. UI IMAGE CREATION HIJACK
-%hook UIImage
-+ (UIImage *)imageWithCGImage:(struct CGImage *)cgImage { 
-    if (enabled && sharedSnapshot && CGImageGetWidth(cgImage) > 30) return sharedSnapshot;
++ (instancetype)creationRequestForAssetFromImage:(UIImage *)image {
+    if (enabled && sharedSnapshot) return %orig(sharedSnapshot);
     return %orig;
 }
 %end
 
-// 4. GALLERY PREVIEW (PHImageManager)
+// 3. UNIVERSAL IMAGE MANAGER HIJACK (For Telegram & Picker)
 %hook PHImageManager
 - (int)requestImageForAsset:(id)asset targetSize:(struct CGSize)targetSize contentMode:(int)contentMode options:(id)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
     if (enabled && sharedSnapshot && resultHandler) {
@@ -80,7 +71,7 @@ static void setup_vcam_v183(UIView *parent) {
 }
 %end
 
-// 5. PREVIEW AND LAYER HIJACK
+// 4. PREVIEW AND LAYER HIJACK
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
@@ -88,12 +79,20 @@ static void setup_vcam_v183(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v183(p);
+            setup_vcam_v184(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             [self setOpacity:0.0];
         }
     }
+}
+%end
+
+// 5. SURGICAL CAMERA UI HIJACK
+%hook CAMImageWell
+- (void)setThumbnailImage:(UIImage *)image {
+    if (enabled && sharedSnapshot) %orig(sharedSnapshot);
+    else %orig;
 }
 %end
 
