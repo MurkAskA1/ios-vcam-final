@@ -1,4 +1,4 @@
-// VirtualCamPro V225.0: The Sovereign Engine (Stable Build)
+// VirtualCamPro V226.0: The Stealth Sovereign (White Screen Fix)
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -38,7 +38,6 @@ static void start_frame_capture() {
                     if (img) {
                         globalLastImage = img;
                         
-                        // Convert to PixelBuffer for deep injection if needed
                         CGImageRef cgImage = img.CGImage;
                         size_t w = CGImageGetWidth(cgImage);
                         size_t h = CGImageGetHeight(cgImage);
@@ -65,7 +64,7 @@ static void start_frame_capture() {
     });
 }
 
-// --- Visual Hijack (The "Chrome Engine" but Clean) ---
+// --- Visual Hijack (The "Chrome Engine" with White Screen Fix) ---
 static void inject_vcam_into_view(UIView *parent) {
     if (!parent || !enabled) return;
     
@@ -79,20 +78,29 @@ static void inject_vcam_into_view(UIView *parent) {
     WKWebViewConfiguration *config = [WKWebViewConfiguration new];
     config.allowsInlineMediaPlayback = YES;
     
+    // Force background color to black for the entire WebView hierarchy
     globalVcamView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     globalVcamView.backgroundColor = [UIColor blackColor];
+    globalVcamView.scrollView.backgroundColor = [UIColor blackColor];
     globalVcamView.opaque = YES;
     globalVcamView.userInteractionEnabled = NO;
     globalVcamView.scrollView.scrollEnabled = NO;
 
+    // Ultra-Clean HTML with immediate rendering
     NSString *html = [NSString stringWithFormat:
-        @"<html><head><style>"
-        "body{margin:0;padding:0;background:black;overflow:hidden;}"
-        "img{width:100%%;height:100%%;object-fit:cover;position:fixed;top:0;left:0;}"
-        "</style></head><body><img src='%@' onerror='location.reload();'></body></html>", streamURL];
+        @"<html><head><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'>"
+        "<style>body{margin:0;padding:0;background:black;overflow:hidden;width:100%%;height:100%%;}"
+        "img{width:100%%;height:100%%;object-fit:cover;position:absolute;top:0;left:0;}"
+        "</style></head><body><img src='%@' alt=''></body></html>", streamURL];
     
-    [globalVcamView loadHTMLString:html baseURL:nil];
-    [parent insertSubview:globalVcamView atIndex:0];
+    [globalVcamView loadHTMLString:html baseURL:[NSURL URLWithString:streamURL]];
+    
+    // Insert behind system buttons
+    if ([parent respondsToSelector:@selector(insertSubview:atIndex:)]) {
+        [parent insertSubview:globalVcamView atIndex:0];
+    } else {
+        [parent addSubview:globalVcamView];
+    }
     
     start_frame_capture();
 }
@@ -137,5 +145,5 @@ static void inject_vcam_into_view(UIView *parent) {
 
 %ctor {
     load_vcam_prefs();
-    NSLog(@"[VirtualCamPro] Sovereign Engine V225.0 Active");
+    NSLog(@"[VirtualCamPro] Stealth Sovereign Engine V226.0 Active");
 }
