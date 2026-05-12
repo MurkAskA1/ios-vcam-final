@@ -1,4 +1,4 @@
-// VCAM V184.0: The System Ghost Pro - assetsd and Hardware-level Hijack
+// VCAM V185.0: The Surgical Ghost - Targeted Hijack without Gallery Flooding
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -10,7 +10,7 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *sharedSnapshot = nil;
 
-static void setup_vcam_v184(UIView *parent) {
+static void setup_vcam_v185(UIView *parent) {
     if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
@@ -22,10 +22,11 @@ static void setup_vcam_v184(UIView *parent) {
     vcamWebView.backgroundColor = [UIColor blackColor];
     vcamWebView.userInteractionEnabled = NO;
     vcamWebView.scrollView.scrollEnabled = NO;
+    vcamWebView.opaque = NO;
 
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
 
-    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black !important; } .vjs-control-bar, .vjs-big-play-button, .controls, .play-button { display: none !important; }'; document.head.appendChild(s); setInterval(function(){ var v = document.querySelector('video'); if(v) v.play(); }, 50);";
+    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { -webkit-tap-highlight-color: transparent !important; } body, html, img, video { margin: 0; padding: 0; width: 100vw; height: 100vh; object-fit: cover; background: black !important; } .vjs-control-bar, .vjs-big-play-button, .controls, .play-button, .pause-indicator { display: none !important; }'; document.head.appendChild(s); setInterval(function(){ var v = document.querySelector('video'); if(v) v.play(); }, 50);";
     WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
     [vcamWebView.configuration.userContentController addUserScript:script];
 
@@ -39,35 +40,30 @@ static void setup_vcam_v184(UIView *parent) {
     }];
 }
 
-// 1. BLOCKING HARDWARE CAPTURE (Direct Injection)
-%hook AVCapturePhotoOutput
-- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
-    if (enabled && sharedSnapshot) {
-        // By hooking here, we can potentially prevent the hardware from ever firing
-        // and force the system to wait for our injected result.
-        %orig;
-    } else {
-        %orig;
-    }
-}
+// 1. DISABLE HARDWARE THUMBNAILS (Prevents real frames from leaking into cache)
+%hook AVCapturePhotoSettings
+- (NSArray *)availableEmbeddedThumbnailPhotoCodecTypes { return @[]; }
 %end
 
-// 2. DAEMON-LEVEL RESOURCE HIJACK (assetsd)
-%hook PHAssetChangeRequest
-+ (instancetype)creationRequestForAssetFromImage:(UIImage *)image {
-    if (enabled && sharedSnapshot) return %orig(sharedSnapshot);
-    return %orig;
-}
-%end
-
-// 3. UNIVERSAL IMAGE MANAGER HIJACK (For Telegram & Picker)
+// 2. SURGICAL IMAGE MANAGER HIJACK (Only for very new assets)
 %hook PHImageManager
-- (int)requestImageForAsset:(id)asset targetSize:(struct CGSize)targetSize contentMode:(int)contentMode options:(id)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
+- (int)requestImageForAsset:(PHAsset *)asset targetSize:(struct CGSize)targetSize contentMode:(int)contentMode options:(id)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
     if (enabled && sharedSnapshot && resultHandler) {
-        resultHandler(sharedSnapshot, nil);
-        return 1337;
+        NSTimeInterval age = [[NSDate date] timeIntervalSinceDate:asset.creationDate];
+        if (age < 15.0) { // Only hijack if the photo was taken in the last 15 seconds
+            resultHandler(sharedSnapshot, nil);
+            return 1337;
+        }
     }
     return %orig;
+}
+%end
+
+// 3. TARGETED CAMERA UI HIJACK
+%hook CAMImageWell
+- (void)setThumbnailImage:(UIImage *)image {
+    if (enabled && sharedSnapshot) %orig(sharedSnapshot);
+    else %orig;
 }
 %end
 
@@ -79,7 +75,7 @@ static void setup_vcam_v184(UIView *parent) {
         UIView *p = (UIView *)self.delegate;
         if (!p || ![p isKindOfClass:[UIView class]]) p = (UIView *)self.superlayer.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            setup_vcam_v184(p);
+            setup_vcam_v185(p);
             vcamWebView.frame = p.bounds;
             [p sendSubviewToBack:vcamWebView];
             [self setOpacity:0.0];
@@ -88,11 +84,15 @@ static void setup_vcam_v184(UIView *parent) {
 }
 %end
 
-// 5. SURGICAL CAMERA UI HIJACK
-%hook CAMImageWell
-- (void)setThumbnailImage:(UIImage *)image {
-    if (enabled && sharedSnapshot) %orig(sharedSnapshot);
-    else %orig;
+// 5. CAPTURE DATA HIJACK
+%hook AVCapturePhoto
+- (NSData *)fileDataRepresentation {
+    if (enabled && sharedSnapshot) return UIImageJPEGRepresentation(sharedSnapshot, 0.95);
+    return %orig;
+}
+- (struct CGImage *)CGImageRepresentation {
+    if (enabled && sharedSnapshot) return sharedSnapshot.CGImage;
+    return %orig;
 }
 %end
 
