@@ -1,4 +1,4 @@
-// VCAM V201.0: Core Logic Fix
+// VCAM V202.0: Ultimate Stability Restoration
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -10,15 +10,14 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static WKWebView *vcamWebView = nil;
 static UIImage *lastSnapshot = nil;
 
-static void init_vcam_v201(UIView *parent) {
-    if (!parent) return;
-    if (vcamWebView && vcamWebView.superview == parent) return;
+static void setup_vcam_v202(UIView *parent) {
+    if (!parent || (vcamWebView && vcamWebView.superview == parent)) return;
     if (vcamWebView) [vcamWebView removeFromSuperview];
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     config.allowsInlineMediaPlayback = YES;
     config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
-    
+
     vcamWebView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     vcamWebView.backgroundColor = [UIColor blackColor];
     vcamWebView.userInteractionEnabled = NO;
@@ -27,13 +26,7 @@ static void init_vcam_v201(UIView *parent) {
 
     [vcamWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
 
-    NSString *js = @"var s = document.createElement('style'); "
-                    "s.innerHTML = '* { background: black !important; color: transparent !important; } "
-                    "video { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover !important; z-index: 9999; } "
-                    ".vjs-control-bar, .controls, button { display: none !important; }'; "
-                    "document.head.appendChild(s); "
-                    "setInterval(function(){ var v = document.querySelector('video'); if(v) { v.play(); v.controls = false; } }, 100);";
-
+    NSString *js = @"var s = document.createElement('style'); s.innerHTML = '* { background: black !important; } video { width: 100vw; height: 100vh; object-fit: cover; }'; document.head.appendChild(s); setInterval(function(){ var v = document.querySelector('video'); if(v) { v.play(); v.controls = false; } }, 100);";
     WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
     [vcamWebView.configuration.userContentController addUserScript:script];
 
@@ -53,9 +46,8 @@ static void init_vcam_v201(UIView *parent) {
     if (enabled) {
         UIView *p = (UIView *)self.delegate;
         if (p && [p isKindOfClass:[UIView class]]) {
-            init_vcam_v201(p);
+            setup_vcam_v202(p);
             vcamWebView.frame = p.bounds;
-            [p sendSubviewToBack:vcamWebView];
             [self setOpacity:0.0];
         }
     }
