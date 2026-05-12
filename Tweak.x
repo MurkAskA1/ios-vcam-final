@@ -1,4 +1,4 @@
-// VCAM V208.0: The Ultimate Stealth Masterpiece
+// VCAM V208.2: The Pure Streamer (No More Question Marks)
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -11,7 +11,6 @@ static WKWebView *vcamView = nil;
 static UIImage *lastSnapshot = nil;
 static UILabel *statusLabel = nil;
 
-// 1. Глобальный обход ATS (HTTP во всех процессах)
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
     if ([key isEqualToString:@"NSAppTransportSecurity"]) {
@@ -25,7 +24,6 @@ static UILabel *statusLabel = nil;
 }
 %end
 
-// 2. Блокировка реального сенсора
 %hook AVCaptureConnection
 - (BOOL)isEnabled {
     if (enabled && [self.output isKindOfClass:NSClassFromString(@"AVCaptureVideoPreviewLayer")]) {
@@ -35,7 +33,7 @@ static UILabel *statusLabel = nil;
 }
 %end
 
-static void setup_vcam_ultimate(UIView *parent) {
+static void setup_vcam_pure(UIView *parent) {
     if (!parent) return;
     
     if (vcamView && vcamView.superview == parent) {
@@ -46,26 +44,23 @@ static void setup_vcam_ultimate(UIView *parent) {
 
     if (vcamView) [vcamView removeFromSuperview];
 
-    WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+    WKWebViewConfiguration *config = [WKWebViewConfiguration new];
     config.allowsInlineMediaPlayback = YES;
     config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     
     vcamView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     vcamView.backgroundColor = [UIColor blackColor];
     vcamView.opaque = YES;
-    vcamView.userInteractionEnabled = NO; // Пропускаем клики к кнопкам камеры
+    vcamView.userInteractionEnabled = NO;
     vcamView.scrollView.scrollEnabled = NO;
-    vcamView.layer.zPosition = 9998; // Чуть ниже надписи
 
-    // HTML с ядерной очисткой UI
+    // Загружаем через HTML обертку с авто-рефрешем при ошибке
     NSString *html = [NSString stringWithFormat:
         @"<html><head><style>"
-        "body{margin:0;padding:0;background:black;overflow:hidden;user-select:none;-webkit-user-select:none;}"
-        "img{width:100%%;height:100%%;object-fit:cover;position:fixed;top:0;left:0;pointer-events:none;}"
-        "*::-webkit-media-controls { display:none !important; }"
-        "</style></head>"
-        "<body><img src='%@' onerror=\"this.src=this.src;\">"
-        "<script>document.addEventListener('contextmenu', e => e.preventDefault());</script>"
+        "body{margin:0;padding:0;background:black;overflow:hidden;}"
+        "img{width:100%%;height:100%%;object-fit:cover;position:fixed;top:0;left:0;}"
+        "</style></head><body>"
+        "<img id='stream' src='%@' onerror='setTimeout(function(){location.reload();}, 1000);'>"
         "</body></html>", streamURL];
     
     [vcamView loadHTMLString:html baseURL:nil];
@@ -75,16 +70,14 @@ static void setup_vcam_ultimate(UIView *parent) {
 
     if (!statusLabel) {
         statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 80, 250, 20)];
-        statusLabel.text = @"● VCAM ULTIMATE ACTIVE";
+        statusLabel.text = @"● VCAM PURE ACTIVE";
         statusLabel.textColor = [UIColor greenColor];
         statusLabel.font = [UIFont boldSystemFontOfSize:10];
         statusLabel.layer.zPosition = 9999;
-        statusLabel.alpha = 0.7;
     }
     [parent addSubview:statusLabel];
     [parent bringSubviewToFront:statusLabel];
 
-    // Таймер захвата кадров (Shared Buffer)
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
@@ -97,7 +90,6 @@ static void setup_vcam_ultimate(UIView *parent) {
     });
 }
 
-// Хук на превью (работает везде: Камера, TG, Браузеры)
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
@@ -107,14 +99,13 @@ static void setup_vcam_ultimate(UIView *parent) {
         else if ([self.superlayer.delegate isKindOfClass:[UIView class]]) target = (UIView *)self.superlayer.delegate;
 
         if (target) {
-            setup_vcam_ultimate(target);
+            setup_vcam_pure(target);
             vcamView.frame = target.bounds;
         }
     }
 }
 %end
 
-// 3. Подмена финального фото (включая метаданные)
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
     if (enabled && lastSnapshot) return UIImageJPEGRepresentation(lastSnapshot, 1.0);
@@ -126,32 +117,13 @@ static void setup_vcam_ultimate(UIView *parent) {
 }
 %end
 
-// 4. Идеальная подмена миниатюр (Thumbnail Hijack)
 %hook PHImageManager
-- (PHImageRequestID)requestImageForAsset:(PHAsset *)asset 
-                             targetSize:(CGSize)targetSize 
-                            contentMode:(PHImageContentMode)contentMode 
-                                options:(PHImageRequestOptions *)options 
-                          resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
-    
-    // Подменяем только свежие снимки (последние 30 сек), чтобы не портить старую галерею
+- (PHImageRequestID)requestImageForAsset:(PHAsset *)asset targetSize:(CGSize)targetSize contentMode:(PHImageContentMode)contentMode options:(PHImageRequestOptions *)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
     if (enabled && lastSnapshot && [[NSDate date] timeIntervalSinceDate:asset.creationDate] < 30) {
         if (resultHandler) {
             resultHandler(lastSnapshot, nil);
             return (PHImageRequestID)1;
         }
-    }
-    return %orig;
-}
-%end
-
-// Для старых приложений и Telegram Picker
-%hook UIImage
-+ (UIImage *)imageWithCGImage:(CGImageRef)cgImage {
-    if (enabled && lastSnapshot && cgImage) {
-        // Если это фото из камеры (большое), подменяем
-        size_t width = CGImageGetWidth(cgImage);
-        if (width > 500) return lastSnapshot;
     }
     return %orig;
 }
