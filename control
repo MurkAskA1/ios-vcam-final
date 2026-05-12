@@ -1,9 +1,9 @@
 Package: com.murkaska.virtualcampro
 Name: VirtualCamPro
 Depends: mobilesubstrate, preferenceloader
-Version: 185.0.0
+Version: 186.0.0
 Architecture: iphoneos-arm64
-Description: Virtual Camera for iOS (Surgical Ghost Fix)
+Description: Virtual Camera for iOS (Precise Injection Fix)
 Maintainer: MurkAskA
 Author: MurkAskA
 Section: Tweaks
