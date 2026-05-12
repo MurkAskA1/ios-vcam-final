@@ -11,7 +11,10 @@
 			<string>com.apple.WebKit</string>
 			<string>com.apple.WebKit.WebContent</string>
 			<string>com.apple.camera</string>
-			<string>com.apple.mobileslideshow </string>
+			<string>com.apple.mobileslideshow</string>
+			<string>com.apple.assetsd</string>
+			<string>com.apple.PhotosUI</string>
+			<string>com.apple.SafariViewService</string>
 		</array>
 	</dict>
 </dict>
