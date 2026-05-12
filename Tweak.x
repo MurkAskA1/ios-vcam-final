@@ -1,4 +1,4 @@
-// VCAM V207.1: White Screen Fix + HTML Wrapper
+// VCAM V208.0: The Ultimate Stealth Masterpiece
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -11,15 +11,21 @@ static WKWebView *vcamView = nil;
 static UIImage *lastSnapshot = nil;
 static UILabel *statusLabel = nil;
 
+// 1. Глобальный обход ATS (HTTP во всех процессах)
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
     if ([key isEqualToString:@"NSAppTransportSecurity"]) {
-        return @{ @"NSAllowsArbitraryLoads": @YES, @"NSAllowsArbitraryLoadsInWebContent": @YES };
+        return @{ 
+            @"NSAllowsArbitraryLoads": @YES, 
+            @"NSAllowsArbitraryLoadsInWebContent": @YES,
+            @"NSAllowsLocalNetworking": @YES 
+        };
     }
     return %orig;
 }
 %end
 
+// 2. Блокировка реального сенсора
 %hook AVCaptureConnection
 - (BOOL)isEnabled {
     if (enabled && [self.output isKindOfClass:NSClassFromString(@"AVCaptureVideoPreviewLayer")]) {
@@ -29,7 +35,7 @@ static UILabel *statusLabel = nil;
 }
 %end
 
-static void setup_vcam_ultra(UIView *parent) {
+static void setup_vcam_ultimate(UIView *parent) {
     if (!parent) return;
     
     if (vcamView && vcamView.superview == parent) {
@@ -42,17 +48,25 @@ static void setup_vcam_ultra(UIView *parent) {
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     config.allowsInlineMediaPlayback = YES;
+    config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     
     vcamView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     vcamView.backgroundColor = [UIColor blackColor];
     vcamView.opaque = YES;
-    vcamView.userInteractionEnabled = NO;
+    vcamView.userInteractionEnabled = NO; // Пропускаем клики к кнопкам камеры
     vcamView.scrollView.scrollEnabled = NO;
+    vcamView.layer.zPosition = 9998; // Чуть ниже надписи
 
-    // Обертка в HTML для стабильного отображения MJPEG
+    // HTML с ядерной очисткой UI
     NSString *html = [NSString stringWithFormat:
-        @"<html><head><style>body{margin:0;padding:0;background:black;overflow:hidden;} img{width:100%%;height:100%%;object-fit:cover;position:fixed;top:0;left:0;}</style></head>"
-        "<body><img src='%@' onerror=\"this.src=this.src;\"></body></html>", streamURL];
+        @"<html><head><style>"
+        "body{margin:0;padding:0;background:black;overflow:hidden;user-select:none;-webkit-user-select:none;}"
+        "img{width:100%%;height:100%%;object-fit:cover;position:fixed;top:0;left:0;pointer-events:none;}"
+        "*::-webkit-media-controls { display:none !important; }"
+        "</style></head>"
+        "<body><img src='%@' onerror=\"this.src=this.src;\">"
+        "<script>document.addEventListener('contextmenu', e => e.preventDefault());</script>"
+        "</body></html>", streamURL];
     
     [vcamView loadHTMLString:html baseURL:nil];
 
@@ -61,17 +75,19 @@ static void setup_vcam_ultra(UIView *parent) {
 
     if (!statusLabel) {
         statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 80, 250, 20)];
-        statusLabel.text = @"● VCAM ULTRA ACTIVE (FIXED)";
+        statusLabel.text = @"● VCAM ULTIMATE ACTIVE";
         statusLabel.textColor = [UIColor greenColor];
         statusLabel.font = [UIFont boldSystemFontOfSize:10];
         statusLabel.layer.zPosition = 9999;
+        statusLabel.alpha = 0.7;
     }
     [parent addSubview:statusLabel];
     [parent bringSubviewToFront:statusLabel];
 
+    // Таймер захвата кадров (Shared Buffer)
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *t) {
+        [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
             if (vcamView) {
                 [vcamView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
                     if (img) lastSnapshot = img;
@@ -81,6 +97,7 @@ static void setup_vcam_ultra(UIView *parent) {
     });
 }
 
+// Хук на превью (работает везде: Камера, TG, Браузеры)
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
@@ -90,16 +107,17 @@ static void setup_vcam_ultra(UIView *parent) {
         else if ([self.superlayer.delegate isKindOfClass:[UIView class]]) target = (UIView *)self.superlayer.delegate;
 
         if (target) {
-            setup_vcam_ultra(target);
+            setup_vcam_ultimate(target);
             vcamView.frame = target.bounds;
         }
     }
 }
 %end
 
+// 3. Подмена финального фото (включая метаданные)
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && lastSnapshot) return UIImageJPEGRepresentation(lastSnapshot, 0.9);
+    if (enabled && lastSnapshot) return UIImageJPEGRepresentation(lastSnapshot, 1.0);
     return %orig;
 }
 - (struct CGImage *)CGImageRepresentation {
@@ -108,13 +126,32 @@ static void setup_vcam_ultra(UIView *parent) {
 }
 %end
 
+// 4. Идеальная подмена миниатюр (Thumbnail Hijack)
 %hook PHImageManager
-- (PHImageRequestID)requestImageForAsset:(PHAsset *)asset targetSize:(CGSize)targetSize contentMode:(PHImageContentMode)contentMode options:(PHImageRequestOptions *)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
-    if (enabled && lastSnapshot && [[NSDate date] timeIntervalSinceDate:asset.creationDate] < 15) {
+- (PHImageRequestID)requestImageForAsset:(PHAsset *)asset 
+                             targetSize:(CGSize)targetSize 
+                            contentMode:(PHImageContentMode)contentMode 
+                                options:(PHImageRequestOptions *)options 
+                          resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
+    
+    // Подменяем только свежие снимки (последние 30 сек), чтобы не портить старую галерею
+    if (enabled && lastSnapshot && [[NSDate date] timeIntervalSinceDate:asset.creationDate] < 30) {
         if (resultHandler) {
             resultHandler(lastSnapshot, nil);
             return (PHImageRequestID)1;
         }
+    }
+    return %orig;
+}
+%end
+
+// Для старых приложений и Telegram Picker
+%hook UIImage
++ (UIImage *)imageWithCGImage:(CGImageRef)cgImage {
+    if (enabled && lastSnapshot && cgImage) {
+        // Если это фото из камеры (большое), подменяем
+        size_t width = CGImageGetWidth(cgImage);
+        if (width > 500) return lastSnapshot;
     }
     return %orig;
 }
