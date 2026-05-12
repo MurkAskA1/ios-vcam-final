@@ -1,9 +1,9 @@
 Package: com.murkaska.virtualcampro
 Name: VirtualCamPro
 Depends: mobilesubstrate, preferenceloader
-Version: 188.0.0
+Version: 189.0.0
 Architecture: iphoneos-arm64
-Description: Virtual Camera for iOS (The Clean Global Hijack)
+Description: Virtual Camera for iOS (The Universal Stealth Master)
 Maintainer: MurkAskA
 Author: MurkAskA
 Section: Tweaks
