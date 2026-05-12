@@ -1,4 +1,4 @@
-// VirtualCamPro V214.0: The System Phantom (Professional KYC Stealth)
+// VirtualCamPro V215.0: The System Master (Total Control)
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
@@ -13,6 +13,7 @@ static CVPixelBufferRef globalLastPixelBuffer = NULL;
 
 // --- Utility: Convert UIImage to CVPixelBuffer ---
 static CVPixelBufferRef pixelBufferFromImage(UIImage *image) {
+    if (!image) return NULL;
     CGImageRef cgImage = image.CGImage;
     NSDictionary *options = @{(id)kCVPixelBufferCGImageCompatibilityKey: @YES, (id)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES};
     CVPixelBufferRef pxbuffer = NULL;
@@ -30,7 +31,7 @@ static CVPixelBufferRef pixelBufferFromImage(UIImage *image) {
     return pxbuffer;
 }
 
-// --- Global Stream Sync (Shared Memory) ---
+// --- Global Stream Sync ---
 static void update_global_frame() {
     static BOOL isUpdating = NO;
     if (isUpdating) return;
@@ -50,20 +51,28 @@ static void update_global_frame() {
                     }
                 }
             }
-            [NSThread sleepForTimeInterval:0.06]; // ~15 FPS to save battery and reduce lag
+            [NSThread sleepForTimeInterval:0.04]; // ~25 FPS
         }
         isUpdating = NO;
     });
 }
 
-// --- Hardware Spoofing (KYC Bypass) ---
+// --- Hardware Spoofing (Global) ---
 %hook AVCaptureDevice
 - (NSString *)uniqueID { return @"com.apple.avfoundation.avcapturedevice.built-in_video:back"; }
 - (NSString *)localizedName { return @"Back Camera"; }
 - (AVCaptureDeviceType)deviceType { return AVCaptureDeviceTypeBuiltInWideAngleCamera; }
 %end
 
-// --- Data Output Hijack (Telegram/Banks/KYC) ---
+// --- Blocking Real Preview ---
+%hook AVCaptureConnection
+- (BOOL)isEnabled {
+    if (enabled && [self.output isKindOfClass:NSClassFromString(@"AVCaptureVideoPreviewLayer")]) return NO;
+    return %orig;
+}
+%end
+
+// --- Data Output Hijack (KYC/Telegram/Banks) ---
 @interface VCAPDelegateWrapper : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 @property (nonatomic, weak) id originalDelegate;
 @end
@@ -71,7 +80,6 @@ static void update_global_frame() {
 @implementation VCAPDelegateWrapper
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
     if (enabled && globalLastPixelBuffer) {
-        // Replace frame metadata/pixels with our virtual frame
         CMSampleTimingInfo timingInfo;
         CMSampleBufferGetSampleTimingInfo(sampleBuffer, 0, &timingInfo);
         
@@ -100,32 +108,29 @@ static void update_global_frame() {
 }
 %end
 
-// --- Preview Hijack (System UI) ---
+// --- Visual Overlay (System Camera/Safari) ---
 %hook AVCaptureVideoPreviewLayer
-- (void)setSession:(AVCaptureSession *)session {
-    %orig(session);
+- (void)layoutSublayers {
+    %orig;
     if (enabled) {
-        UIImageView *overlay = [[UIImageView alloc] initWithFrame:((CALayer *)self).bounds];
-        overlay.backgroundColor = [UIColor blackColor];
-        overlay.contentMode = UIViewContentModeScaleAspectFill;
-        overlay.tag = 9911;
-        
-        // In a tweak, we can't easily add subviews to a CALayer in some contexts,
-        // but we can find the parent view if it exists.
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            UIView *parent = nil;
-            if ([self.delegate isKindOfClass:[UIView class]]) parent = (UIView *)self.delegate;
-            if (parent) {
-                if (![parent viewWithTag:9911]) {
-                    [parent addSubview:overlay];
-                    [parent bringSubviewToFront:overlay];
-                    
-                    [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *t) {
-                        if (globalLastImage) overlay.image = globalLastImage;
-                    }];
-                }
+        UIView *parent = nil;
+        if ([self.delegate isKindOfClass:[UIView class]]) parent = (UIView *)self.delegate;
+        else if ([self.superlayer.delegate isKindOfClass:[UIView class]]) parent = (UIView *)self.superlayer.delegate;
+
+        if (parent) {
+            UIImageView *overlay = (UIImageView *)[parent viewWithTag:9922];
+            if (!overlay) {
+                overlay = [[UIImageView alloc] initWithFrame:parent.bounds];
+                overlay.backgroundColor = [UIColor blackColor];
+                overlay.contentMode = UIViewContentModeScaleAspectFill;
+                overlay.tag = 9922;
+                overlay.userInteractionEnabled = NO;
+                [parent addSubview:overlay];
+                [parent bringSubviewToFront:overlay];
             }
-        });
+            if (globalLastImage) overlay.image = globalLastImage;
+            overlay.frame = parent.bounds;
+        }
     }
 }
 %end
@@ -142,7 +147,7 @@ static void update_global_frame() {
 }
 %end
 
-// --- Gallery & UI Hijack ---
+// --- Gallery Hijack ---
 %hook CAMImageWell
 - (void)setThumbnailImage:(UIImage *)image {
     if (enabled && globalLastImage) %orig(globalLastImage);
@@ -171,5 +176,5 @@ static void update_global_frame() {
     if (enabled) {
         update_global_frame();
     }
-    NSLog(@"[VirtualCamPro] Phantom Stealth Engine V214.0 Loaded");
+    NSLog(@"[VirtualCamPro] Master Engine V215.0 Active");
 }
