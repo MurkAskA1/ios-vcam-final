@@ -4,7 +4,10 @@
             "com.apple.UIKit",
             "com.apple.AVFoundation",
             "com.apple.camera",
-            "com.apple.mobileslideshow"
+            "com.apple.mobileslideshow",
+            "com.apple.WebKit.WebContent",
+            "com.apple.WebKit.Networking",
+            "com.apple.SafariViewService"
         );
     };
 }
