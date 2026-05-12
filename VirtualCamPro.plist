@@ -9,6 +9,9 @@
 			<string>com.apple.UIKit</string>
 			<string>com.apple.AVFoundation</string>
 			<string>com.apple.WebKit</string>
+			<string>com.apple.WebKit.WebContent</string>
+			<string>com.apple.camera</string>
+			<string>com.apple.mobileslideshow </string>
 		</array>
 	</dict>
 </dict>
