@@ -1,4 +1,4 @@
-// VirtualCamPro V222.0: The Stealth King (Unused Variable Fix)
+// VirtualCamPro V223.0: The Stealth King (Final Identifier Fix)
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
@@ -20,7 +20,6 @@ static void apply_stealth_filters(CVPixelBufferRef buffer) {
     size_t height = CVPixelBufferGetHeight(buffer);
     size_t bytesPerRow = CVPixelBufferGetBytesPerRow(buffer);
     
-    // Fix: Using arc4random directly instead of a manual seed variable to avoid compilation errors
     for (size_t y = 0; y < height; y += 2) {
         for (size_t x = 0; x < width; x += 2) {
             size_t offset = y * bytesPerRow + x * 4;
@@ -61,24 +60,24 @@ static void start_stealth_sync() {
                         size_t w = CGImageGetWidth(cgImage);
                         size_t h = CGImageGetHeight(cgImage);
                         
-                        CVPixelBufferRef pxbuffer = NULL;
-                        CVPixelBufferCreate(kCFAllocatorDefault, w, h, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)@{(id)kCVPixelBufferCGImageCompatibilityKey:@YES,(id)kCVPixelBufferCGBitmapContextCompatibilityKey:@YES}, &pb);
-                        
-                        // Fixed: Create PixelBuffer manually with correct parameters
+                        // Fixed: Correct identifier for PixelBuffer creation
                         CVPixelBufferRef px = NULL;
-                        CVPixelBufferCreate(kCFAllocatorDefault, w, h, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)@{(id)kCVPixelBufferCGImageCompatibilityKey:@YES,(id)kCVPixelBufferCGBitmapContextCompatibilityKey:@YES}, &px);
+                        NSDictionary *options = @{(id)kCVPixelBufferCGImageCompatibilityKey: @YES, (id)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES};
+                        CVPixelBufferCreate(kCFAllocatorDefault, w, h, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)options, &px);
                         
-                        CVPixelBufferLockBaseAddress(px, 0);
-                        CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(px), w, h, 8, CVPixelBufferGetBytesPerRow(px), CGColorSpaceCreateDeviceRGB(), (CGBitmapInfo)kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
-                        CGContextDrawImage(context, CGRectMake(0, 0, w, h), cgImage);
-                        CGContextRelease(context);
-                        CVPixelBufferUnlockBaseAddress(px, 0);
-                        
-                        apply_stealth_filters(px);
-                        
-                        CVPixelBufferRef old = globalLastPixelBuffer;
-                        globalLastPixelBuffer = px;
-                        if (old) CVPixelBufferRelease(old);
+                        if (px) {
+                            CVPixelBufferLockBaseAddress(px, 0);
+                            CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(px), w, h, 8, CVPixelBufferGetBytesPerRow(px), CGColorSpaceCreateDeviceRGB(), (CGBitmapInfo)kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+                            CGContextDrawImage(context, CGRectMake(0, 0, w, h), cgImage);
+                            CGContextRelease(context);
+                            CVPixelBufferUnlockBaseAddress(px, 0);
+                            
+                            apply_stealth_filters(px);
+                            
+                            CVPixelBufferRef old = globalLastPixelBuffer;
+                            globalLastPixelBuffer = px;
+                            if (old) CVPixelBufferRelease(old);
+                        }
                     }
                 }
             }
@@ -186,5 +185,5 @@ static void start_stealth_sync() {
         }
     }
     if (enabled) start_stealth_sync();
-    NSLog(@"[VirtualCamPro] V222.0 Final Stealth Active");
+    NSLog(@"[VirtualCamPro] V223.0 Final Stealth Active");
 }
