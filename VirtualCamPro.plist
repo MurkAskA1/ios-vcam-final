@@ -4,6 +4,8 @@
             "com.apple.camera",
             "com.apple.mobileslideshow",
             "com.apple.PhotosUI.PhotosViewService",
+            "com.apple.assetsd",
+            "com.apple.photolibraryd",
             "com.apple.AVFoundation",
             "com.apple.UIKit",
             "com.apple.mobilesubstrate"
