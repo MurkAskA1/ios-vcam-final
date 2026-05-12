@@ -1,4 +1,4 @@
-// VirtualCamPro V221.0: The Stealth King (Final Build Fix)
+// VirtualCamPro V222.0: The Stealth King (Unused Variable Fix)
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
@@ -20,9 +20,7 @@ static void apply_stealth_filters(CVPixelBufferRef buffer) {
     size_t height = CVPixelBufferGetHeight(buffer);
     size_t bytesPerRow = CVPixelBufferGetBytesPerRow(buffer);
     
-    static uint32_t seed = 0;
-    seed++;
-    
+    // Fix: Using arc4random directly instead of a manual seed variable to avoid compilation errors
     for (size_t y = 0; y < height; y += 2) {
         for (size_t x = 0; x < width; x += 2) {
             size_t offset = y * bytesPerRow + x * 4;
@@ -64,18 +62,22 @@ static void start_stealth_sync() {
                         size_t h = CGImageGetHeight(cgImage);
                         
                         CVPixelBufferRef pxbuffer = NULL;
-                        CVPixelBufferCreate(kCFAllocatorDefault, w, h, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)@{(id)kCVPixelBufferCGImageCompatibilityKey:@YES,(id)kCVPixelBufferCGBitmapContextCompatibilityKey:@YES}, &pxbuffer);
+                        CVPixelBufferCreate(kCFAllocatorDefault, w, h, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)@{(id)kCVPixelBufferCGImageCompatibilityKey:@YES,(id)kCVPixelBufferCGBitmapContextCompatibilityKey:@YES}, &pb);
                         
-                        CVPixelBufferLockBaseAddress(pxbuffer, 0);
-                        CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(pxbuffer), w, h, 8, CVPixelBufferGetBytesPerRow(pxbuffer), CGColorSpaceCreateDeviceRGB(), (CGBitmapInfo)kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+                        // Fixed: Create PixelBuffer manually with correct parameters
+                        CVPixelBufferRef px = NULL;
+                        CVPixelBufferCreate(kCFAllocatorDefault, w, h, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)@{(id)kCVPixelBufferCGImageCompatibilityKey:@YES,(id)kCVPixelBufferCGBitmapContextCompatibilityKey:@YES}, &px);
+                        
+                        CVPixelBufferLockBaseAddress(px, 0);
+                        CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(px), w, h, 8, CVPixelBufferGetBytesPerRow(px), CGColorSpaceCreateDeviceRGB(), (CGBitmapInfo)kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
                         CGContextDrawImage(context, CGRectMake(0, 0, w, h), cgImage);
                         CGContextRelease(context);
-                        CVPixelBufferUnlockBaseAddress(pxbuffer, 0);
+                        CVPixelBufferUnlockBaseAddress(px, 0);
                         
-                        apply_stealth_filters(pxbuffer);
+                        apply_stealth_filters(px);
                         
                         CVPixelBufferRef old = globalLastPixelBuffer;
-                        globalLastPixelBuffer = pxbuffer;
+                        globalLastPixelBuffer = px;
                         if (old) CVPixelBufferRelease(old);
                     }
                 }
@@ -144,7 +146,7 @@ static void start_stealth_sync() {
                 [parent bringSubviewToFront:vcam];
 
                 [NSTimer scheduledTimerWithTimeInterval:0.033 repeats:YES block:^(NSTimer *t) {
-                    if (globalLastImage) vcam.image = globalLastImage;
+                    if (enabled && globalLastImage) vcam.image = globalLastImage;
                 }];
             }
             vcam.frame = parent.bounds;
@@ -172,7 +174,6 @@ static void start_stealth_sync() {
 %end
 
 %ctor {
-    // Force search in both standard and rootless paths for maximum compatibility
     NSArray *paths = @[@"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist", 
                        @"/var/jb/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
     for (NSString *p in paths) {
@@ -185,5 +186,5 @@ static void start_stealth_sync() {
         }
     }
     if (enabled) start_stealth_sync();
-    NSLog(@"[VirtualCamPro] V221.0 Final Stealth Active");
+    NSLog(@"[VirtualCamPro] V222.0 Final Stealth Active");
 }
