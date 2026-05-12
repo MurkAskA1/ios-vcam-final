@@ -1,38 +1,17 @@
-// VirtualCamPro V211.0: The Native Shadow (White Screen Fix)
+// VirtualCamPro V212.0: The Stealth Vision (Black Screen Fix)
 #import <UIKit/UIKit.h>
+#import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
 #import <objc/runtime.h>
 
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
-static UIImageView *vcamImageView = nil;
+static WKWebView *vcamWebView = nil;
 static UIImage *lastSnapshot = nil;
-static NSURLSessionDataTask *mjpegTask = nil;
+static UILabel *debugLabel = nil;
 
-// --- Native MJPEG Decoder ---
-
-static void start_mjpeg_stream() {
-    if (mjpegTask) [mjpegTask cancel];
-    
-    NSURL *url = [NSURL URLWithString:streamURL];
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration defaultSessionConfiguration] delegate:nil delegateQueue:[NSOperationQueue mainQueue]];
-    
-    mjpegTask = [session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                start_mjpeg_stream();
-            });
-            return;
-        }
-        
-        // Note: Real MJPEG requires boundary parsing. For simplicity and stability with MediaMTX,
-        // we use a faster method or fallback to a recurring snapshot if the native stream fails.
-    }];
-    [mjpegTask resume];
-}
-
-// --- Global Hijack Logic ---
+// --- Anti-Detection ---
 
 %hook AVCaptureDevice
 - (NSString *)uniqueID { return @"com.apple.avfoundation.avcapturedevice.built-in_video:back"; }
@@ -47,41 +26,64 @@ static void start_mjpeg_stream() {
 }
 %end
 
-static void setup_vcam_native(UIView *parent) {
+// --- Global ATS Fix ---
+%hook NSBundle
+- (id)objectForInfoDictionaryKey:(NSString *)key {
+    if ([key isEqualToString:@"NSAppTransportSecurity"]) {
+        return @{ @"NSAllowsArbitraryLoads": @YES, @"NSAllowsArbitraryLoadsInWebContent": @YES };
+    }
+    return %orig;
+}
+%end
+
+static void setup_vcam_v2(UIView *parent) {
     if (!parent || !enabled) return;
     
-    if (vcamImageView && vcamImageView.superview == parent) {
-        [parent bringSubviewToFront:vcamImageView];
+    if (vcamWebView && vcamWebView.superview == parent) {
+        [parent bringSubviewToFront:vcamWebView];
         return;
     }
 
-    if (vcamImageView) [vcamImageView removeFromSuperview];
+    if (vcamWebView) [vcamWebView removeFromSuperview];
 
-    vcamImageView = [[UIImageView alloc] initWithFrame:parent.bounds];
-    vcamImageView.backgroundColor = [UIColor blackColor];
-    vcamImageView.contentMode = UIViewContentModeScaleAspectFill;
-    vcamImageView.userInteractionEnabled = NO;
-    vcamImageView.clipsToBounds = YES;
+    WKWebViewConfiguration *config = [WKWebViewConfiguration new];
+    config.allowsInlineMediaPlayback = YES;
+    config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
+    
+    vcamWebView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
+    vcamWebView.backgroundColor = [UIColor blackColor];
+    vcamWebView.opaque = YES;
+    vcamWebView.userInteractionEnabled = NO;
+    vcamWebView.scrollView.scrollEnabled = NO;
 
-    [parent addSubview:vcamImageView];
-    [parent bringSubviewToFront:vcamImageView];
+    // High-Compatibility HTML Wrapper
+    NSString *html = [NSString stringWithFormat:
+        @"<html><head><meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'>"
+        "<style>body{margin:0;padding:0;background:black;overflow:hidden;} img{width:100vw;height:100vh;object-fit:contain;}</style>"
+        "</head><body><img src='%@' onerror=\"this.src=this.src;\"></body></html>", streamURL];
+    
+    [vcamWebView loadHTMLString:html baseURL:[NSURL URLWithString:streamURL]];
+    [parent insertSubview:vcamWebView atIndex:0]; // Stay behind buttons
 
-    // Using a simpler, more robust MJPEG/Snapshot loop to avoid "White Screen"
-    [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *t) {
-        if (!enabled) return;
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            NSData *data = [NSData dataWithContentsOfURL:[NSURL URLWithString:streamURL]];
-            if (data) {
-                UIImage *img = [UIImage imageWithData:data];
-                if (img) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        vcamImageView.image = img;
-                        lastSnapshot = img;
-                    });
-                }
+    if (!debugLabel) {
+        debugLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 40, 300, 20)];
+        debugLabel.textColor = [UIColor greenColor];
+        debugLabel.font = [UIFont systemFontOfSize:8];
+    }
+    debugLabel.text = [NSString stringWithFormat:@"VCAM V212.0: %@", streamURL];
+    [parent addSubview:debugLabel];
+
+    // Snapshot Loop for Photo Hijack
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
+            if (vcamWebView) {
+                [vcamWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
+                    if (img) lastSnapshot = img;
+                }];
             }
-        });
-    }];
+        }];
+    });
 }
 
 %hook AVCaptureVideoPreviewLayer
@@ -93,14 +95,14 @@ static void setup_vcam_native(UIView *parent) {
         else if ([self.superlayer.delegate isKindOfClass:[UIView class]]) target = (UIView *)self.superlayer.delegate;
 
         if (target) {
-            setup_vcam_native(target);
-            vcamImageView.frame = target.bounds;
+            setup_vcam_v2(target);
+            vcamWebView.frame = target.bounds;
         }
     }
 }
 %end
 
-// --- Deep Capture Hijack (KYC/Bank/Telegram) ---
+// --- Photo Hijack ---
 
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
@@ -113,14 +115,7 @@ static void setup_vcam_native(UIView *parent) {
 }
 %end
 
-// --- Gallery & Asset Hijack (The "No Thumbnail Leak" Fix) ---
-
-%hook PHAssetCreationRequest
-+ (instancetype)creationRequestForAssetFromImage:(UIImage *)image {
-    if (enabled && lastSnapshot) return %orig(lastSnapshot);
-    return %orig;
-}
-%end
+// --- UI & Gallery Hijack ---
 
 %hook CAMImageWell
 - (void)setThumbnailImage:(UIImage *)image {
@@ -131,7 +126,7 @@ static void setup_vcam_native(UIView *parent) {
 
 %hook PHImageManager
 - (PHImageRequestID)requestImageForAsset:(PHAsset *)asset targetSize:(CGSize)targetSize contentMode:(PHImageContentMode)contentMode options:(PHImageRequestOptions *)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))resultHandler {
-    if (enabled && lastSnapshot && [[NSDate date] timeIntervalSinceDate:asset.creationDate] < 30) {
+    if (enabled && lastSnapshot && [[NSDate date] timeIntervalSinceDate:asset.creationDate] < 15) {
         if (resultHandler) {
             resultHandler(lastSnapshot, nil);
             return (PHImageRequestID)1;
@@ -146,6 +141,6 @@ static void setup_vcam_native(UIView *parent) {
     enabled = [defs objectForKey:@"enabled"] ? [defs boolForKey:@"enabled"] : YES;
     NSString *str = [defs stringForKey:@"rtspURL"];
     if (str && str.length > 5) streamURL = str;
-
-    NSLog(@"[VirtualCamPro] Native Stealth Engine V211.0 Loaded");
+    
+    NSLog(@"[VirtualCamPro] Stealth Engine V212.0 Active");
 }
