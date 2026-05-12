@@ -1,4 +1,4 @@
-// VirtualCamPro V224.0: The Sovereign Engine (Maximum Compatibility)
+// VirtualCamPro V225.0: The Sovereign Engine (Stable Build)
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -37,7 +37,27 @@ static void start_frame_capture() {
                 [globalVcamView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
                     if (img) {
                         globalLastImage = img;
-                        // Convert for injection logic if needed
+                        
+                        // Convert to PixelBuffer for deep injection if needed
+                        CGImageRef cgImage = img.CGImage;
+                        size_t w = CGImageGetWidth(cgImage);
+                        size_t h = CGImageGetHeight(cgImage);
+                        
+                        CVPixelBufferRef px = NULL;
+                        NSDictionary *options = @{(id)kCVPixelBufferCGImageCompatibilityKey: @YES, (id)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES};
+                        CVReturn status = CVPixelBufferCreate(kCFAllocatorDefault, w, h, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)options, &px);
+                        
+                        if (status == kCVReturnSuccess && px) {
+                            CVPixelBufferLockBaseAddress(px, 0);
+                            CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(px), w, h, 8, CVPixelBufferGetBytesPerRow(px), CGColorSpaceCreateDeviceRGB(), (CGBitmapInfo)kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+                            CGContextDrawImage(context, CGRectMake(0, 0, w, h), cgImage);
+                            CGContextRelease(context);
+                            CVPixelBufferUnlockBaseAddress(px, 0);
+                            
+                            CVPixelBufferRef old = globalLastPixelBuffer;
+                            globalLastPixelBuffer = px;
+                            if (old) CVPixelBufferRelease(old);
+                        }
                     }
                 }];
             }
@@ -65,7 +85,6 @@ static void inject_vcam_into_view(UIView *parent) {
     globalVcamView.userInteractionEnabled = NO;
     globalVcamView.scrollView.scrollEnabled = NO;
 
-    // Artifact-Free HTML (No Pause, No Labels)
     NSString *html = [NSString stringWithFormat:
         @"<html><head><style>"
         "body{margin:0;padding:0;background:black;overflow:hidden;}"
@@ -73,8 +92,6 @@ static void inject_vcam_into_view(UIView *parent) {
         "</style></head><body><img src='%@' onerror='location.reload();'></body></html>", streamURL];
     
     [globalVcamView loadHTMLString:html baseURL:nil];
-    
-    // Insert behind system buttons
     [parent insertSubview:globalVcamView atIndex:0];
     
     start_frame_capture();
@@ -111,7 +128,14 @@ static void inject_vcam_into_view(UIView *parent) {
 }
 %end
 
+%hook CAMImageWell
+- (void)setThumbnailImage:(UIImage *)image {
+    if (enabled && globalLastImage) %orig(globalLastImage);
+    else %orig;
+}
+%end
+
 %ctor {
     load_vcam_prefs();
-    NSLog(@"[VirtualCamPro] Sovereign Engine V224.0 Loaded");
+    NSLog(@"[VirtualCamPro] Sovereign Engine V225.0 Active");
 }
