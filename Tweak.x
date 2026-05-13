@@ -1,4 +1,4 @@
-// VirtualCamPro V238.0: The Visible Phantom Fix
+// VirtualCamPro V239.0: The True Engine Fix
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -39,7 +39,7 @@ static void load_vcam_prefs() {
 static void start_frame_capture() {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *t) {
+        [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
             if (enabled && globalVcamView) {
                 [globalVcamView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
                     if (img) globalLastImage = img;
@@ -63,6 +63,24 @@ static void inject_vcam_sovereign(UIView *parent) {
     config.allowsInlineMediaPlayback = YES;
     config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     
+    // Inject JS to force black background, remove MediaMTX player UI, and auto-play WebRTC videos or MJPEG images
+    WKUserContentController *userContent = [[WKUserContentController alloc] init];
+    NSString *js = @"let style = document.createElement('style');" 
+                   "style.innerHTML = 'body { background: black !important; margin: 0 !important; overflow: hidden !important; } " 
+                   "video, img { width: 100vw !important; height: 100vh !important; object-fit: cover !important; position: absolute !important; top: 0 !important; left: 0 !important; pointer-events: none !important; } " 
+                   "*:not(video):not(img):not(body):not(html):not(style) { display: none !important; }';" 
+                   "document.head.appendChild(style);" 
+                   "let v = document.querySelector('video');" 
+                   "if (v) {" 
+                   "  v.removeAttribute('controls'); v.controls = false; v.muted = true;" 
+                   "  v.setAttribute('playsinline', 'playsinline');" 
+                   "  v.play().catch(e=>{});" 
+                   "  setInterval(() => { v.removeAttribute('controls'); v.controls = false; if(v.paused) v.play(); }, 500);" 
+                   "}";
+    WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
+    [userContent addUserScript:script];
+    config.userContentController = userContent;
+
     globalVcamView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     globalVcamView.backgroundColor = [UIColor blackColor];
     globalVcamView.scrollView.backgroundColor = [UIColor blackColor];
@@ -70,8 +88,9 @@ static void inject_vcam_sovereign(UIView *parent) {
     globalVcamView.userInteractionEnabled = NO;
     globalVcamView.scrollView.scrollEnabled = NO;
 
-    NSString *html = [NSString stringWithFormat:@"<html><body style=\"margin:0;padding:0;background:black;overflow:hidden;\"><img src=\"%@\" style=\"width:100vw;height:100vh;object-fit:cover;\" /></body></html>", streamURL];
-    [globalVcamView loadHTMLString:html baseURL:[NSURL URLWithString:streamURL]];
+    // Directly load the URL. MediaMTX WebRTC page or raw MJPEG will be formatted perfectly by the injected JS.
+    NSURLRequest *req = [NSURLRequest requestWithURL:[NSURL URLWithString:streamURL] cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10.0];
+    [globalVcamView loadRequest:req];
     
     [parent insertSubview:globalVcamView atIndex:0];
     
@@ -83,12 +102,10 @@ static void inject_vcam_sovereign(UIView *parent) {
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
-        // HIDE THE REAL CAMERA FEED so it doesn't overlap our stream
-        self.opacity = 0.0;
+        self.opacity = 0.0; // Hide the real camera output
         
         UIView *target = nil;
         CALayer *layer = self;
-        // Traverse up the layer tree to find the hosting UIView
         while (layer) {
             if ([layer.delegate isKindOfClass:[UIView class]]) {
                 target = (UIView *)layer.delegate;
