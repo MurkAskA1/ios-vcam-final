@@ -111,7 +111,7 @@ static void VCamDebug(NSString *format, ...) {
             status.textAlignment = NSTextAlignmentCenter;
             status.font = [UIFont boldSystemFontOfSize:11];
             status.textColor = [UIColor cyanColor];
-            status.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7);
+            status.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
             status.numberOfLines = 0;
             [container addSubview:status];
         }
