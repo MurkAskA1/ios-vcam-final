@@ -1,4 +1,4 @@
-// Tweak.x - VirtualCamPro V267.0: Total Capture Lockdown
+// Tweak.x - VirtualCamPro V268.0: Nuclear Capture Protection
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
@@ -12,10 +12,22 @@ static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
 static UILabel *gDiagnosticsHUD = nil;
 
+// Create a solid black image programmatically to ensure fallback works
+static UIImage *CreateBlackImage() {
+    CGRect rect = CGRectMake(0, 0, 1, 1);
+    UIGraphicsBeginImageContext(rect.size);
+    CGContextRef context = UIGraphicsGetCurrentContext();
+    CGContextSetFillColorWithColor(context, [[UIColor blackColor] CGColor]);
+    CGContextFillRect(context, rect);
+    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return img;
+}
+
 static void UpdateDiagnostics(UIView *view, NSString *status, UIColor *color) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!gDiagnosticsHUD) {
-            gDiagnosticsHUD = [[UILabel alloc] initWithFrame:CGRectMake(0, 80, view.bounds.size.width, 140)];
+            gDiagnosticsHUD = [[UILabel alloc] initWithFrame:CGRectMake(0, 100, view.bounds.size.width, 140)];
             gDiagnosticsHUD.textAlignment = NSTextAlignmentCenter;
             gDiagnosticsHUD.font = [UIFont fontWithName:@"Courier-Bold" size:12];
             gDiagnosticsHUD.textColor = [UIColor whiteColor];
@@ -23,7 +35,7 @@ static void UpdateDiagnostics(UIView *view, NSString *status, UIColor *color) {
             gDiagnosticsHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
             [view addSubview:gDiagnosticsHUD];
         }
-        gDiagnosticsHUD.text = [NSString stringWithFormat:@"VCAM V267 LOCKDOWN\nURL: %@\nSTATUS: %@\nBUFFER: %@", 
+        gDiagnosticsHUD.text = [NSString stringWithFormat:@"VCAM V268 NUCLEAR\nURL: %@\nSTATUS: %@\nBUFFER: %@", 
             streamURL, status, (gLastFrame ? @"READY" : @"EMPTY")];
         gDiagnosticsHUD.textColor = color;
         [view bringSubviewToFront:gDiagnosticsHUD];
@@ -54,29 +66,35 @@ static void UpdateDiagnostics(UIView *view, NSString *status, UIColor *color) {
 }
 %end
 
-// 2. Absolute Photo Hijack (Multiple hooks to stop REAL photo leak)
+// 2. Absolute Photo Hijack (Blocking all output paths)
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled) {
-        if (gLastFrame) return UIImageJPEGRepresentation(gLastFrame, 0.95);
-        // If stream is empty, return a black square instead of reality!
-        return UIImageJPEGRepresentation([UIImage imageNamed:@"black"], 0.1);
-    }
-    return %orig;
+    if (!enabled) return %orig;
+    UIImage *target = gLastFrame ? gLastFrame : CreateBlackImage();
+    return UIImageJPEGRepresentation(target, 0.95);
 }
 
 - (CGImageRef)CGImageRepresentation {
-    if (enabled && gLastFrame) return gLastFrame.CGImage;
-    return %orig;
+    if (!enabled) return %orig;
+    UIImage *target = gLastFrame ? gLastFrame : CreateBlackImage();
+    return target.CGImage;
+}
+
+// Newer iOS methods
+- (CVPixelBufferRef)pixelBuffer {
+    if (!enabled) return %orig;
+    // Returning NULL forces the app to use fileDataRepresentation or CGImageRepresentation
+    return NULL;
 }
 %end
 
-// 3. Prevent Data Leak (For apps that don't use 'photo' but capture frames)
+// 3. Prevent Real Data Leak for all session types
 %hook AVCaptureVideoDataOutput
 - (void)captureOutput:(AVCaptureOutput *)o didOutputSampleBuffer:(CMSampleBufferRef)s fromConnection:(AVCaptureConnection *)c {
     if (enabled) {
-        // We don't call %orig here if enabled, to stop the real lens from leaking data to the app
-        // In a real bank app, this forces it to wait for our injected buffer.
+        // DO NOT call %orig. This completely cuts the data line from the real lens to the app.
+        // If we have a frame, we could inject it here, but for now we block leakage.
+        return;
     }
     %orig;
 }
