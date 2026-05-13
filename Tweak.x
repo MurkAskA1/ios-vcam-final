@@ -1,64 +1,37 @@
-// Tweak.x - VirtualCamPro V263.0: Deep Diagnostic Master
+// Tweak.x - VirtualCamPro V264.0: Bulletproof Diagnostics
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <WebKit/WebKit.h>
-#import <Photos/Photos.h>
 
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
-static UILabel *gHUD = nil;
+static UIWindow *gDiagWindow = nil;
+static UITextView *gLogView = nil;
+
+static void HUDLog(NSString *msg) {
+    NSLog(@"[VCam] %@", msg);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (gLogView) {
+            gLogView.text = [gLogView.text stringByAppendingFormat:@"\n[%@] %@", [NSDate date], msg];
+            [gLogView scrollRangeToVisible:NSMakeRange(gLogView.text.length - 1, 1)];
+        }
+    });
+    
+    // Force write to Filza-readable log
+    FILE *f = fopen("/var/mobile/Documents/vcam_debug.log", "a");
+    if (f) {
+        fprintf(f, "[%s] %s\n", [[NSDate date].description UTF8String], [msg UTF8String]);
+        fclose(f);
+    }
+}
 
 @interface VCamEngine : WKWebView <WKNavigationDelegate>
 @end
-
 @implementation VCamEngine
-- (instancetype)initWithFrame:(CGRect)frame configuration:(WKWebViewConfiguration *)configuration {
-    self = [super initWithFrame:frame configuration:configuration];
-    if (self) {
-        self.backgroundColor = [UIColor blackColor];
-        self.scrollView.backgroundColor = [UIColor blackColor];
-        self.userInteractionEnabled = NO;
-        self.navigationDelegate = self;
-    }
-    return self;
-}
-
-static void HUD(NSString *status, UIColor *color) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (gHUD) {
-            gHUD.text = [NSString stringWithFormat:@"VCAM V263 | %@\nPROC: %@\nURL: %@\nSTAT: %@", 
-                [[NSDate date] descriptionWithLocale:[NSLocale currentLocale]],
-                [NSBundle mainBundle].bundleIdentifier, streamURL, status];
-            gHUD.textColor = color;
-        }
-    });
-}
-
-- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation {
-    HUD(@"CONNECTING...", [UIColor orangeColor]);
-}
-
-- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-    HUD(@"STREAM ACTIVE", [UIColor greenColor]);
-    [webView evaluateJavaScript:@"document.body.style.background = 'black';" completionHandler:nil];
-}
-
-- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-    HUD([NSString stringWithFormat:@"NET ERROR: %@", error.localizedDescription], [UIColor redColor]);
-}
-
-- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-    HUD([NSString stringWithFormat:@"LOAD ERROR: %@", error.localizedDescription], [UIColor redColor]);
-}
+- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation { HUDLog(@"[Web] Connecting..."); }
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation { HUDLog(@"[Web] Stream Loaded (Active)"); }
+- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error { HUDLog([NSString stringWithFormat:@"[Web] Net Error: %@", error.localizedDescription]); }
 @end
-
-%hook NSBundle
-- (NSDictionary *)infoDictionary {
-    NSMutableDictionary *dict = [%orig mutableCopy];
-    dict[@"NSAppTransportSecurity"] = @{ @"NSAllowsArbitraryLoads": @YES };
-    return dict;
-}
-%end
 
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
@@ -66,44 +39,47 @@ static void HUD(NSString *status, UIColor *color) {
     if (!enabled) return;
     self.opacity = 0.0;
     
-    UIView *container = (UIView *)self.delegate;
-    if ([container isKindOfClass:[UIView class]]) {
-        if (!gHUD) {
-            gHUD = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, container.bounds.size.width, 110)];
-            gHUD.textAlignment = NSTextAlignmentCenter;
-            gHUD.font = [UIFont fontWithName:@"Courier-Bold" size:11];
-            gHUD.numberOfLines = 0;
-            gHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-            [container addSubview:gHUD];
-        }
-        [container bringSubviewToFront:gHUD];
-
-        VCamEngine *engine = [container viewWithTag:8888];
-        if (!engine) {
+    UIView *p = (UIView *)self.delegate;
+    if ([p isKindOfClass:[UIView class]]) {
+        VCamEngine *web = [p viewWithTag:8888];
+        if (!web) {
+            HUDLog(@"Creating Web Engine layer...");
             WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
             config.allowsInlineMediaPlayback = YES;
             config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
             
-            engine = [[VCamEngine alloc] initWithFrame:container.bounds configuration:config];
-            engine.tag = 8888;
-            [container insertSubview:engine atIndex:0];
+            web = [[VCamEngine alloc] initWithFrame:p.bounds configuration:config];
+            web.tag = 8888;
+            web.navigationDelegate = web;
+            web.backgroundColor = [UIColor blackColor];
+            [p insertSubview:web atIndex:0];
             
-            // Nuclear CSS Injection
-            NSString *css = @"* { background: black !important; } "
-                            "video, img { position: fixed !important; top: 0; left: 0; width: 100% !important; height: 100% !important; object-fit: cover !important; z-index: 999; } "
-                            ".ui, .controls, button, span, .spinner { display: none !important; }";
-            
-            NSString *js = [NSString stringWithFormat:@"var s = document.createElement('style'); s.innerHTML = '%@'; document.head.appendChild(s);", css];
-            WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES];
-            [config.userContentController addUserScript:script];
-            
-            [engine loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
+            [web loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
         }
-        engine.frame = container.bounds;
+        web.frame = p.bounds;
     }
 }
 %end
 
 %ctor {
-    NSLog(@"[VCam] V263 Diagnostics Loaded");
+    // Create a global overlay window that cannot be hidden by the app
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        gDiagWindow = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, [UIScreen mainScreen].bounds.size.width, 180)];
+        gDiagWindow.windowLevel = UIWindowLevelStatusBar + 100;
+        gDiagWindow.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+        gDiagWindow.userInteractionEnabled = NO;
+        
+        gLogView = [[UITextView alloc] initWithFrame:gDiagWindow.bounds];
+        gLogView.backgroundColor = [UIColor clearColor];
+        gLogView.textColor = [UIColor cyanColor];
+        gLogView.font = [UIFont fontWithName:@"Courier" size:10];
+        gLogView.text = @"--- VCAM V264 BULLETPROOF LOG ---";
+        
+        [gDiagWindow addSubview:gLogView];
+        [gDiagWindow makeKeyAndVisible];
+        gDiagWindow.hidden = NO;
+        
+        HUDLog([NSString stringWithFormat:@"Process: %@", [NSBundle mainBundle].bundleIdentifier]);
+        HUDLog([NSString stringWithFormat:@"Target URL: %@", streamURL]);
+    });
 }
