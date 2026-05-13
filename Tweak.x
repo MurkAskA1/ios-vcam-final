@@ -1,19 +1,16 @@
-// Tweak.x - VirtualCamPro V261.0: Core Force
+// Tweak.x - VirtualCamPro V262.0: Forensic HUD
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
+#import <WebKit/WebKit.h>
 #import <Photos/Photos.h>
 #import <CoreVideo/CoreVideo.h>
 #import <CoreMedia/CoreMedia.h>
-#import <os/log.h>
-#import "MJPEGStreamReader.h"
 
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
-static MJPEGStreamReader *gReader = nil;
-static UIImage *gLastFrame = nil;
-static UILabel *gStatusHUD = nil;
+static UILabel *gHUD = nil;
 
-// 1. Force Allow Local HTTP (ATS Bypass)
+// 1. System-wide ATS Bypass to allow local HTTP
 %hook NSBundle
 - (NSDictionary *)infoDictionary {
     NSMutableDictionary *dict = [%orig mutableCopy];
@@ -24,61 +21,86 @@ static UILabel *gStatusHUD = nil;
 
 static void UpdateHUD(UIView *host, NSString *status, UIColor *color) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!gStatusHUD) {
-            gStatusHUD = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, host.bounds.size.width, 60)];
-            gStatusHUD.textAlignment = NSTextAlignmentCenter;
-            gStatusHUD.font = [UIFont boldSystemFontOfSize:12];
-            gStatusHUD.textColor = [UIColor whiteColor];
-            gStatusHUD.numberOfLines = 0;
-            gStatusHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
-            [host addSubview:gStatusHUD];
+        if (!gHUD) {
+            gHUD = [[UILabel alloc] initWithFrame:CGRectMake(0, 50, host.bounds.size.width, 100)];
+            gHUD.textAlignment = NSTextAlignmentCenter;
+            gHUD.font = [UIFont fontWithName:@"Courier-Bold" size:12];
+            gHUD.textColor = [UIColor whiteColor];
+            gHUD.numberOfLines = 0;
+            gHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+            [host addSubview:gHUD];
         }
-        gStatusHUD.text = [NSString stringWithFormat:@"V261 | URL: %@\nSTATUS: %@", streamURL, status];
-        gStatusHUD.textColor = color;
-        [host bringSubviewToFront:gStatusHUD];
+        gHUD.text = [NSString stringWithFormat:@"V262 DIAGNOSTIC HUD\nPROCESS: %@\nURL: %@\nSTATUS: %@", 
+            [NSBundle mainBundle].bundleIdentifier, streamURL, status];
+        gHUD.textColor = color;
+        [host bringSubviewToFront:gHUD];
     });
 }
 
-// 2. Visual Substitution
+@interface VCamWeb : WKWebView
+@end
+@implementation VCamWeb
+- (instancetype)initWithFrame:(CGRect)frame configuration:(WKWebViewConfiguration *)configuration {
+    self = [super initWithFrame:frame configuration:configuration];
+    if (self) {
+        self.backgroundColor = [UIColor blackColor];
+        self.scrollView.backgroundColor = [UIColor blackColor];
+        self.userInteractionEnabled = NO;
+    }
+    return self;
+}
+@end
+
+// 2. Visual Substitution Hook
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (!enabled) return;
     
-    self.opacity = 0.0;
-    UIView *p = (UIView *)self.delegate;
-    if ([p isKindOfClass:[UIView class]]) {
-        UIImageView *vcam = [p viewWithTag:9999];
-        if (!vcam) {
-            vcam = [[UIImageView alloc] initWithFrame:p.bounds];
-            vcam.tag = 9999;
-            vcam.contentMode = UIViewContentModeScaleAspectFill;
-            vcam.backgroundColor = [UIColor blackColor];
-            [p insertSubview:vcam atIndex:0];
+    self.opacity = 0.0; // Hide real lens
+    UIView *container = (UIView *)self.delegate;
+    if ([container isKindOfClass:[UIView class]]) {
+        VCamWeb *web = [container viewWithTag:8888];
+        if (!web) {
+            WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+            config.allowsInlineMediaPlayback = YES;
+            config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
+            
+            web = [[VCamWeb alloc] initWithFrame:container.bounds configuration:config];
+            web.tag = 8888;
+            [container insertSubview:web atIndex:0];
+            
+            // Nuclear CSS: Force raw video and hide all MediaMTX UI
+            NSString *css = @"* { background: black !important; } "
+                            "video, img { position: fixed !important; top: 0; left: 0; width: 100% !important; height: 100% !important; object-fit: cover !important; } "
+                            ".ui, .controls, button, span, .spinner { display: none !important; }";
+            
+            NSString *js = [NSString stringWithFormat:@"var s = document.createElement('style'); s.innerHTML = '%@'; document.head.appendChild(s);", css];
+            WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES];
+            [config.userContentController addUserScript:script];
+            
+            [web loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]]];
+            UpdateHUD(container, @"WEB ENGINE STARTED", [UIColor yellowColor]);
         }
-        if (gLastFrame) vcam.image = gLastFrame;
-        
-        NSString *statStr = (gReader.frameCount > 0) ? 
-            [NSString stringWithFormat:@"ACTIVE (FPS: %lu)", (unsigned long)gReader.frameCount] : 
-            @"CONNECTING...";
-        
-        UpdateHUD(p, statStr, (gReader.frameCount > 0 ? [UIColor greenColor] : [UIColor orangeColor]));
+        web.frame = container.bounds;
+        if (web.isLoading) {
+             UpdateHUD(container, @"LOADING STREAM...", [UIColor orangeColor]);
+        } else {
+             UpdateHUD(container, @"ENGINE ACTIVE", [UIColor greenColor]);
+        }
     }
 }
 %end
 
-// 3. Absolute Photo Hijack
+// 3. Absolute Photo Hijack (Placeholder while engine active)
 %hook AVCapturePhoto
-- (CGImageRef)CGImageRepresentation { if (enabled && gLastFrame) return gLastFrame.CGImage; return %orig; }
-- (NSData *)fileDataRepresentation { if (enabled && gLastFrame) return UIImageJPEGRepresentation(gLastFrame, 0.9); return %orig; }
+- (NSData *)fileDataRepresentation { return %orig; }
 %end
 
 %ctor {
     NSString *bid = [NSBundle mainBundle].bundleIdentifier;
-    // Inject into any app that has a UI and might use camera
-    if ([bid containsString:@"camera"] || [bid containsString:@"telegra"] || [bid containsString:@"safari"] || [bid containsString:@"chrome"] || [bid containsString:@"WebKit"]) {
-        gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
-        gReader.frameCallback = ^(UIImage *f) { gLastFrame = f; };
-        [gReader startStreaming];
+    // Force injection into core apps
+    if ([bid containsString:@"camera"] || [bid containsString:@"telegra"] || [bid containsString:@"safari"]) {
+        NSLog(@"[VCam] Sovereign Hybrid loaded in %@", bid);
     }
 }
