@@ -1,4 +1,4 @@
-// VirtualCamPro V237.0: The Absolute Master Clean Text Fix
+// VirtualCamPro V238.0: The Visible Phantom Fix
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -78,14 +78,24 @@ static void inject_vcam_sovereign(UIView *parent) {
     start_frame_capture();
 }
 
-// Ensure it attaches to the preview layer in Camera and Telegram
+// Ensure it attaches to the preview layer robustly
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
+        // HIDE THE REAL CAMERA FEED so it doesn't overlap our stream
+        self.opacity = 0.0;
+        
         UIView *target = nil;
-        if ([self.delegate isKindOfClass:[UIView class]]) target = (UIView *)self.delegate;
-        else if ([self.superlayer.delegate isKindOfClass:[UIView class]]) target = (UIView *)self.superlayer.delegate;
+        CALayer *layer = self;
+        // Traverse up the layer tree to find the hosting UIView
+        while (layer) {
+            if ([layer.delegate isKindOfClass:[UIView class]]) {
+                target = (UIView *)layer.delegate;
+                break;
+            }
+            layer = layer.superlayer;
+        }
 
         if (target) {
             inject_vcam_sovereign(target);
