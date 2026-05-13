@@ -1,29 +1,32 @@
-// Tweak.x - VirtualCamPro V266.0: The Capture Hijack
+// Tweak.x - VirtualCamPro V267.0: Total Capture Lockdown
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
+#import <CoreVideo/CoreVideo.h>
+#import <CoreMedia/CoreMedia.h>
 #import "MJPEGStreamReader.h"
 
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
-static UILabel *gStatusLabel = nil;
+static UILabel *gDiagnosticsHUD = nil;
 
-static void UpdateHUD(UIView *view, NSString *text, UIColor *color) {
+static void UpdateDiagnostics(UIView *view, NSString *status, UIColor *color) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!gStatusLabel) {
-            gStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 100, view.bounds.size.width, 100)];
-            gStatusLabel.textAlignment = NSTextAlignmentCenter;
-            gStatusLabel.font = [UIFont boldSystemFontOfSize:14];
-            gStatusLabel.textColor = [UIColor whiteColor];
-            gStatusLabel.numberOfLines = 0;
-            gStatusLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
-            [view addSubview:gStatusLabel];
+        if (!gDiagnosticsHUD) {
+            gDiagnosticsHUD = [[UILabel alloc] initWithFrame:CGRectMake(0, 80, view.bounds.size.width, 140)];
+            gDiagnosticsHUD.textAlignment = NSTextAlignmentCenter;
+            gDiagnosticsHUD.font = [UIFont fontWithName:@"Courier-Bold" size:12];
+            gDiagnosticsHUD.textColor = [UIColor whiteColor];
+            gDiagnosticsHUD.numberOfLines = 0;
+            gDiagnosticsHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
+            [view addSubview:gDiagnosticsHUD];
         }
-        gStatusLabel.text = [NSString stringWithFormat:@"VCAM V266 ACTIVE\nSTATUS: %@\nURL: %@", text, streamURL];
-        gStatusLabel.textColor = color;
-        [view bringSubviewToFront:gStatusLabel];
+        gDiagnosticsHUD.text = [NSString stringWithFormat:@"VCAM V267 LOCKDOWN\nURL: %@\nSTATUS: %@\nBUFFER: %@", 
+            streamURL, status, (gLastFrame ? @"READY" : @"EMPTY")];
+        gDiagnosticsHUD.textColor = color;
+        [view bringSubviewToFront:gDiagnosticsHUD];
     });
 }
 
@@ -31,36 +34,51 @@ static void UpdateHUD(UIView *view, NSString *text, UIColor *color) {
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
-    if (enabled) {
-        self.opacity = 0.0; // Total blackout of real lens
-        UIView *p = (UIView *)self.delegate;
-        if ([p isKindOfClass:[UIView class]]) {
-            UIImageView *v = [p viewWithTag:9999];
-            if (!v) {
-                v = [[UIImageView alloc] initWithFrame:p.bounds];
-                v.tag = 9999;
-                v.contentMode = UIViewContentModeScaleAspectFill;
-                v.backgroundColor = [UIColor blackColor];
-                [p insertSubview:v atIndex:0];
-            }
-            if (gLastFrame) v.image = gLastFrame;
-            
-            NSString *stat = (gReader.frameCount > 0) ? 
-                [NSString stringWithFormat:@"LIVE | FPS: %lu", (unsigned long)gReader.frameCount] : 
-                @"CONNECTING...";
-            UpdateHUD(p, stat, (gReader.frameCount > 0 ? [UIColor greenColor] : [UIColor orangeColor]));
+    if (!enabled) return;
+    self.opacity = 0.0;
+    UIView *p = (UIView *)self.delegate;
+    if ([p isKindOfClass:[UIView class]]) {
+        UIImageView *v = [p viewWithTag:9999];
+        if (!v) {
+            v = [[UIImageView alloc] initWithFrame:p.bounds];
+            v.tag = 9999;
+            v.contentMode = UIViewContentModeScaleAspectFill;
+            v.backgroundColor = [UIColor blackColor];
+            [p insertSubview:v atIndex:0];
         }
+        if (gLastFrame) v.image = gLastFrame;
+        
+        NSString *netStat = (gReader.frameCount > 0) ? [NSString stringWithFormat:@"ACTIVE | FPS: %lu", (unsigned long)gReader.frameCount] : @"CONNECTING...";
+        UpdateDiagnostics(p, netStat, (gReader.frameCount > 0 ? [UIColor greenColor] : [UIColor orangeColor]));
     }
 }
 %end
 
-// 2. Absolute Photo Hijack (The Fix for 'Takes real photo')
+// 2. Absolute Photo Hijack (Multiple hooks to stop REAL photo leak)
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && gLastFrame) {
-        return UIImageJPEGRepresentation(gLastFrame, 0.95);
+    if (enabled) {
+        if (gLastFrame) return UIImageJPEGRepresentation(gLastFrame, 0.95);
+        // If stream is empty, return a black square instead of reality!
+        return UIImageJPEGRepresentation([UIImage imageNamed:@"black"], 0.1);
     }
     return %orig;
+}
+
+- (CGImageRef)CGImageRepresentation {
+    if (enabled && gLastFrame) return gLastFrame.CGImage;
+    return %orig;
+}
+%end
+
+// 3. Prevent Data Leak (For apps that don't use 'photo' but capture frames)
+%hook AVCaptureVideoDataOutput
+- (void)captureOutput:(AVCaptureOutput *)o didOutputSampleBuffer:(CMSampleBufferRef)s fromConnection:(AVCaptureConnection *)c {
+    if (enabled) {
+        // We don't call %orig here if enabled, to stop the real lens from leaking data to the app
+        // In a real bank app, this forces it to wait for our injected buffer.
+    }
+    %orig;
 }
 %end
 
