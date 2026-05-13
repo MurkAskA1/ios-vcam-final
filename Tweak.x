@@ -1,34 +1,32 @@
-// Tweak.x - VirtualCamPro V248.0: The Final Force
+// Tweak.x - VirtualCamPro V249.0: Stability & Safety Fix
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
 #import "MJPEGStreamReader.h"
 
-static BOOL enabled = YES; // FORCED ON FOR DEBUGGING
+static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
-static UIWindow *gDiagnosticWindow = nil;
-static UILabel *gDiagLabel = nil;
+static UILabel *gStatusLabel = nil;
 
-static void VCamShowDiagnostic(NSString *text, UIColor *color) {
+// Safe UI update for diagnostics, only in Camera app
+static void VCamUpdateStatus(UIView *host, NSString *text, UIColor *color) {
+    if (![[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.camera"]) return;
+    
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!gDiagnosticWindow) {
-            gDiagnosticWindow = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, [UIScreen mainScreen].bounds.size.width, 100)];
-            gDiagnosticWindow.windowLevel = UIWindowLevelStatusBar + 1;
-            gDiagnosticWindow.backgroundColor = [UIColor clearColor];
-            gDiagnosticWindow.userInteractionEnabled = NO;
-            
-            gDiagLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, gDiagnosticWindow.bounds.size.width, 60)];
-            gDiagLabel.textAlignment = NSTextAlignmentCenter;
-            gDiagLabel.numberOfLines = 0;
-            gDiagLabel.font = [UIFont boldSystemFontOfSize:12];
-            gDiagLabel.textColor = [UIColor whiteColor];
-            [gDiagnosticWindow addSubview:gDiagLabel];
-            [gDiagnosticWindow setHidden:NO];
+        UILabel *label = (UILabel *)[host viewWithTag:7777];
+        if (!label) {
+            label = [[UILabel alloc] initWithFrame:CGRectMake(0, 50, host.bounds.size.width, 40)];
+            label.tag = 7777;
+            label.textAlignment = NSTextAlignmentCenter;
+            label.font = [UIFont boldSystemFontOfSize:13];
+            label.textColor = [UIColor whiteColor];
+            label.numberOfLines = 0;
+            [host addSubview:label];
         }
-        gDiagLabel.text = text;
-        gDiagLabel.backgroundColor = [color colorWithAlphaComponent:0.7];
+        label.text = text;
+        label.backgroundColor = [color colorWithAlphaComponent:0.6];
     });
 }
 
@@ -46,7 +44,13 @@ static void VCamShowDiagnostic(NSString *text, UIColor *color) {
                 v.contentMode = UIViewContentModeScaleAspectFill;
                 [p insertSubview:v atIndex:0];
             }
-            if (gLastFrame) v.image = gLastFrame;
+            v.image = gLastFrame;
+            
+            if (gReader.frameCount > 0) {
+                VCamUpdateStatus(p, [NSString stringWithFormat:@"Live | FPS: %lu", (unsigned long)gReader.frameCount], [UIColor greenColor]);
+            } else {
+                VCamUpdateStatus(p, @"Connecting to stream...", [UIColor orangeColor]);
+            }
         }
     }
 }
@@ -60,16 +64,18 @@ static void VCamShowDiagnostic(NSString *text, UIColor *color) {
 %end
 
 %ctor {
-    // Forced settings skip for reliability
-    VCamShowDiagnostic([NSString stringWithFormat:@"VCam 248 Loaded\nURL: %@", streamURL], [UIColor orangeColor]);
-    
-    gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
-    gReader.frameCallback = ^(UIImage *frame) {
-        gLastFrame = frame;
-        VCamShowDiagnostic([NSString stringWithFormat:@"Live | FPS: %lu", (unsigned long)gReader.frameCount], [UIColor greenColor]);
-    };
-    gReader.errorCallback = ^(NSError *err) {
-        VCamShowDiagnostic([NSString stringWithFormat:@"Error: %ld\n%@", (long)err.code, err.localizedDescription], [UIColor redColor]);
-    };
-    [gReader startStreaming];
+    NSString *bundleID = [NSBundle mainBundle].bundleIdentifier;
+    // ONLY run network logic in specific apps to prevent system hangs
+    if ([bundleID isEqualToString:@"com.apple.camera"] || 
+        [bundleID isEqualToString:@"org.telegram.messenger"] || 
+        [bundleID containsString:@"safari"] || 
+        [bundleID containsString:@"chrome"]) {
+        
+        gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
+        gReader.frameCallback = ^(UIImage *frame) { gLastFrame = frame; };
+        gReader.errorCallback = ^(NSError *err) {
+             NSLog(@"[VCam] Stream Error: %@", err.localizedDescription);
+        };
+        [gReader startStreaming];
+    }
 }
