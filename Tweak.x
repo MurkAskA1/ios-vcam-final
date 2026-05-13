@@ -1,57 +1,12 @@
-// VirtualCamPro V240.2: The Deep Engine Breakthrough (Clean Text Fix)
+// VirtualCamPro V241.0: The Final Absolute Sovereign
 #import <UIKit/UIKit.h>
+#import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
 
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
-static UIImage *globalLastImage = nil;
-
-@interface VCAMFetcher : NSObject <NSURLSessionDataDelegate>
-@property (strong) NSURLSessionDataTask *task;
-@property (strong) NSMutableData *buffer;
-- (void)start;
-@end
-
-@implementation VCAMFetcher
-- (instancetype)init {
-    if (self = [super init]) {
-        _buffer = [NSMutableData data];
-    }
-    return self;
-}
-
-- (void)start {
-    NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration defaultSessionConfiguration];
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:cfg delegate:self delegateQueue:[NSOperationQueue mainQueue]];
-    NSURLRequest *req = [NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]];
-    _task = [session dataTaskWithRequest:req];
-    [_task resume];
-}
-
-- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
-    [_buffer appendData:data];
-    
-    unsigned char s1[] = {0xff, 0xd8};
-    unsigned char s2[] = {0xff, 0xd9};
-    NSData *startData = [NSData dataWithBytes:s1 length:2];
-    NSData *endData = [NSData dataWithBytes:s2 length:2];
-    
-    NSRange startRange = [_buffer rangeOfData:startData options:NSDataSearchBackwards range:NSMakeRange(0, _buffer.length)];
-    if (startRange.location != NSNotFound) {
-        NSRange endRange = [_buffer rangeOfData:endData options:0 range:NSMakeRange(startRange.location, _buffer.length - startRange.location)];
-        if (endRange.location != NSNotFound) {
-            NSRange imgRange = NSMakeRange(startRange.location, endRange.location - startRange.location + 2);
-            NSData *jpeg = [_buffer subdataWithRange:imgRange];
-            UIImage *img = [UIImage imageWithData:jpeg];
-            if (img) globalLastImage = img;
-            [_buffer replaceBytesInRange:NSMakeRange(0, endRange.location + 2) withBytes:NULL length:0];
-        }
-    }
-    if (_buffer.length > 1024 * 1024 * 8) _buffer.length = 0;
-}
-@end
-
-static VCAMFetcher *fetcher = nil;
+static WKWebView *globalVcamView = nil;
+static UIImage *globalLastSnapshot = nil;
 
 static void load_prefs() {
     NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
@@ -62,53 +17,106 @@ static void load_prefs() {
     }
 }
 
+// Global App Transport Security Bypass
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
     if ([key isEqualToString:@"NSAppTransportSecurity"]) {
-        return @{ @"NSAllowsArbitraryLoads": @YES };
+        return @{ @"NSAllowsArbitraryLoads": @YES, @"NSAllowsLocalNetworking": @YES };
     }
     return %orig;
 }
 %end
+
+static void inject_vcam(UIView *parent) {
+    if (!parent || !enabled) return;
+    
+    // Prevent duplicate injection
+    if (globalVcamView && globalVcamView.superview == parent) {
+        [parent sendSubviewToBack:globalVcamView];
+        return;
+    }
+    
+    if (globalVcamView) [globalVcamView removeFromSuperview];
+
+    WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+    config.allowsInlineMediaPlayback = YES;
+    config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
+
+    // Nuclear UI Wiper: Hide all player controls, live badges, and white backgrounds
+    NSString *js = @"let s = document.createElement('style');" 
+                    "s.innerHTML = 'body, html { background: black !important; margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%; } " 
+                    "video, img { width: 100vw !important; height: 100vh !important; object-fit: cover !important; position: absolute; top:0; left:0; pointer-events: none !important; } " 
+                    "* { -webkit-tap-highlight-color: transparent !important; outline: none !important; } " 
+                    ".vjs-control-bar, .vjs-big-play-button, .live-badge, .player-controls { display: none !important; }';" 
+                    "document.head.appendChild(s);" 
+                    "setInterval(() => { " 
+                    "  let v = document.querySelector('video'); " 
+                    "  if(v) { v.controls = false; v.removeAttribute('controls'); if(v.paused) v.play().catch(e=>{}); } " 
+                    "}, 500);";
+
+    WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
+    [config.userContentController addUserScript:script];
+
+    globalVcamView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
+    globalVcamView.backgroundColor = [UIColor blackColor];
+    globalVcamView.scrollView.backgroundColor = [UIColor blackColor];
+    globalVcamView.opaque = YES;
+    globalVcamView.userInteractionEnabled = NO;
+    globalVcamView.scrollView.scrollEnabled = NO;
+
+    // Load the stream directly as it's the most reliable for MediaMTX
+    NSURLRequest *req = [NSURLRequest requestWithURL:[NSURL URLWithString:streamURL] cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10.0];
+    [globalVcamView loadRequest:req];
+
+    [parent insertSubview:globalVcamView atIndex:0];
+    
+    // Start snapshot loop for gallery/photo hijack
+    [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
+        if (globalVcamView) {
+            [globalVcamView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
+                if (img) globalLastSnapshot = img;
+            }];
+        }
+    }];
+}
 
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
-        self.opacity = 0.0;
-        UIView *p = (UIView *)self.delegate;
-        if ([p isKindOfClass:[UIView class]]) {
-            UIImageView *vcam = [p viewWithTag:9999];
-            if (!vcam) {
-                vcam = [[UIImageView alloc] initWithFrame:p.bounds];
-                vcam.tag = 9999;
-                vcam.contentMode = UIViewContentModeScaleAspectFill;
-                [p insertSubview:vcam atIndex:0];
-            }
-            vcam.image = globalLastImage;
+        self.opacity = 0.0; // Hide real camera output
+        UIView *target = (UIView *)self.delegate;
+        if ([target isKindOfClass:[UIView class]]) {
+            inject_vcam(target);
+            globalVcamView.frame = target.bounds;
         }
     }
 }
 %end
 
+// Anti-KYC Device Masking
+%hook AVCaptureDevice
+- (NSString *)uniqueID { return @"com.apple.avfoundation.avcapturedevice.built-in_video:back"; }
+- (NSString *)localizedName { return @"Back Camera"; }
+- (BOOL)isVirtualDevice { return NO; }
+%end
+
+// Hijack saved photos
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && globalLastImage) return UIImageJPEGRepresentation(globalLastImage, 0.85);
+    if (enabled && globalLastSnapshot) return UIImageJPEGRepresentation(globalLastSnapshot, 0.9);
     return %orig;
 }
 %end
 
+// Hijack camera thumbnail well
 %hook CAMImageWell
 - (void)setThumbnailImage:(UIImage *)image {
-    if (enabled && globalLastImage) %orig(globalLastImage);
+    if (enabled && globalLastSnapshot) %orig(globalLastSnapshot);
     else %orig(image);
 }
 %end
 
 %ctor {
     load_prefs();
-    if (enabled) {
-        fetcher = [[VCAMFetcher alloc] init];
-        [fetcher start];
-    }
 }
