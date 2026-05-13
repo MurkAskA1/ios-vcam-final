@@ -1,4 +1,4 @@
-// MJPEGStreamReader.h
+// MJPEGStreamReader.h - VirtualCamPro V246.0
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
@@ -11,6 +11,7 @@ typedef void (^MJPEGErrorCallback)(NSError *error);
 @property (nonatomic, strong, readonly) NSURL *streamURL;
 @property (nonatomic, assign, readonly) BOOL isConnecting;
 @property (nonatomic, assign, readonly) NSUInteger frameCount;
+@property (nonatomic, assign, readonly) CFAbsoluteTime lastFrameTime;
 @property (nonatomic, copy, nullable) MJPEGFrameCallback frameCallback;
 @property (nonatomic, copy, nullable) MJPEGErrorCallback errorCallback;
 
