@@ -1,6 +1,5 @@
-// VirtualCamPro V233.0: The Pure Phantom Master (Black Screen & Safari Fix)
+// VirtualCamPro V234.0: The Stealth Sentinel (Launch & Hang Fix)
 #import <UIKit/UIKit.h>
-#import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
 #import <CoreVideo/CoreVideo.h>
@@ -9,73 +8,69 @@
 
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
-static WKWebView *hiddenWebView = nil;
 static UIImage *globalLastImage = nil;
 static CVPixelBufferRef globalLastPixelBuffer = NULL;
+static BOOL engineStarted = NO;
 
 // --- Direct Preference Loading ---
 static void load_vcam_prefs() {
-    NSArray *paths = @[@"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist", 
-                       @"/var/jb/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
-    for (NSString *p in paths) {
-        NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:p];
-        if (d) {
-            enabled = [d[@"enabled"] ?: @YES boolValue];
-            NSString *u = d[@"rtspURL"];
-            if (u && u.length > 5) streamURL = u;
-            break;
-        }
+    NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:@"/var/jb/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
+    if (!d) d = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
+    
+    if (d) {
+        enabled = [d[@"enabled"] ?: @YES boolValue];
+        NSString *u = d[@"rtspURL"];
+        if (u && u.length > 5) streamURL = u;
     }
 }
 
-// --- Global Stream & Snapshot Engine ---
-static void start_phantom_engine() {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        dispatch_async(dispatch_get_main_queue(), ^{
-            WKWebViewConfiguration *config = [WKWebViewConfiguration new];
-            config.allowsInlineMediaPlayback = YES;
-            config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
+// --- Utility: Image to PixelBuffer ---
+static CVPixelBufferRef pixelBufferFromImage(UIImage *image) {
+    if (!image) return NULL;
+    CGImageRef cgImage = image.CGImage;
+    CVPixelBufferRef pb = NULL;
+    NSDictionary *options = @{(id)kCVPixelBufferCGImageCompatibilityKey:@YES,(id)kCVPixelBufferCGBitmapContextCompatibilityKey:@YES};
+    CVPixelBufferCreate(kCFAllocatorDefault, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage), kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)options, &pb);
+    if (!pb) return NULL;
+    
+    CVPixelBufferLockBaseAddress(pb, 0);
+    CGContextRef ctx = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(pb), CGImageGetWidth(cgImage), CGImageGetHeight(cgImage), 8, CVPixelBufferGetBytesPerRow(pb), CGColorSpaceCreateDeviceRGB(), (CGBitmapInfo)kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+    CGContextDrawImage(ctx, CGRectMake(0, 0, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage)), cgImage);
+    CGContextRelease(ctx);
+    CVPixelBufferUnlockBaseAddress(pb, 0);
+    return pb;
+}
 
-            hiddenWebView = [[WKWebView alloc] initWithFrame:CGRectMake(0,0,1280,720) configuration:config];
-            hiddenWebView.backgroundColor = [UIColor blackColor];
-            hiddenWebView.opaque = YES;
-            
-            NSURLRequest *req = [NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]];
-            [hiddenWebView loadRequest:req];
+// --- Background Stream Sync (Non-Blocking) ---
+static void start_vcam_engine_lazy() {
+    if (engineStarted || !enabled) return;
+    engineStarted = YES;
 
-            [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *t) {
-                if (enabled && hiddenWebView) {
-                    [hiddenWebView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
-                        if (img) {
-                            globalLastImage = img;
-                            
-                            // Convert to PixelBuffer for deep injection
-                            CGImageRef cgImage = img.CGImage;
-                            CVPixelBufferRef pb = NULL;
-                            NSDictionary *options = @{(id)kCVPixelBufferCGImageCompatibilityKey:@YES,(id)kCVPixelBufferCGBitmapContextCompatibilityKey:@YES};
-                            CVPixelBufferCreate(kCFAllocatorDefault, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage), kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)options, &pb);
-                            
-                            if (pb) {
-                                CVPixelBufferLockBaseAddress(pb, 0);
-                                CGContextRef ctx = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(pb), CGImageGetWidth(cgImage), CGImageGetHeight(cgImage), 8, CVPixelBufferGetBytesPerRow(pb), CGColorSpaceCreateDeviceRGB(), (CGBitmapInfo)kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
-                                CGContextDrawImage(ctx, CGRectMake(0, 0, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage)), cgImage);
-                                CGContextRelease(ctx);
-                                CVPixelBufferUnlockBaseAddress(pb, 0);
-                                
-                                CVPixelBufferRef old = globalLastPixelBuffer;
-                                globalLastPixelBuffer = pb;
-                                if (old) CFRelease(old);
-                            }
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+        while (enabled) {
+            @autoreleasepool {
+                // Use a non-caching data fetch to prevent memory build-up
+                NSData *data = [NSData dataWithContentsOfURL:[NSURL URLWithString:streamURL] options:NSDataReadingUncached error:nil];
+                if (data) {
+                    UIImage *img = [UIImage imageWithData:data];
+                    if (img) {
+                        globalLastImage = img;
+                        CVPixelBufferRef pb = pixelBufferFromImage(img);
+                        if (pb) {
+                            CVPixelBufferRef old = globalLastPixelBuffer;
+                            globalLastPixelBuffer = pb;
+                            if (old) CFRelease(old);
                         }
-                    }];
+                    }
                 }
-            }];
-        });
+            }
+            [NSThread sleepForTimeInterval:0.04];
+        }
+        engineStarted = NO;
     });
 }
 
-// --- Data Output Hijack (WebRTC/Safari/Banks) ---
+// --- Data Output Hijack (WebRTC/Banks/Telegram) ---
 @interface VCAPDelegateWrapper : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 @property (nonatomic, weak) id originalDelegate;
 @end
@@ -102,6 +97,7 @@ static void start_phantom_engine() {
 
 %hook AVCaptureVideoDataOutput
 - (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)delegate queue:(dispatch_queue_t)queue {
+    start_vcam_engine_lazy(); // Start engine ONLY when camera is requested
     if (enabled && delegate && ![delegate isKindOfClass:[VCAPDelegateWrapper class]]) {
         VCAPDelegateWrapper *wrapper = [[VCAPDelegateWrapper alloc] init];
         wrapper.originalDelegate = delegate;
@@ -117,38 +113,29 @@ static void start_phantom_engine() {
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
+        start_vcam_engine_lazy();
         UIView *parent = nil;
         if ([self.delegate isKindOfClass:[UIView class]]) parent = (UIView *)self.delegate;
         else if ([self.superlayer.delegate isKindOfClass:[UIView class]]) parent = (UIView *)self.superlayer.delegate;
 
         if (parent) {
-            UIImageView *vcamView = (UIImageView *)[parent viewWithTag:9933];
+            UIImageView *vcamView = (UIImageView *)[parent viewWithTag:9944];
             if (!vcamView) {
                 vcamView = [[UIImageView alloc] initWithFrame:parent.bounds];
                 vcamView.backgroundColor = [UIColor blackColor];
                 vcamView.contentMode = UIViewContentModeScaleAspectFill;
-                vcamView.tag = 9933;
+                vcamView.tag = 9944;
                 vcamView.userInteractionEnabled = NO;
                 [parent addSubview:vcamView];
                 [parent bringSubviewToFront:vcamView];
                 
-                [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *t) {
+                [NSTimer scheduledTimerWithTimeInterval:0.04 repeats:YES block:^(NSTimer *t) {
                     if (enabled && globalLastImage) vcamView.image = globalLastImage;
                 }];
             }
             vcamView.frame = parent.bounds;
         }
     }
-}
-%end
-
-// --- Global ATS Fix ---
-%hook NSBundle
-- (id)objectForInfoDictionaryKey:(NSString *)key {
-    if ([key isEqualToString:@"NSAppTransportSecurity"]) {
-        return @{ @"NSAllowsArbitraryLoads": @YES, @"NSAllowsArbitraryLoadsInWebContent": @YES, @"NSAllowsLocalNetworking": @YES };
-    }
-    return %orig;
 }
 %end
 
@@ -162,8 +149,6 @@ static void start_phantom_engine() {
 
 %ctor {
     load_vcam_prefs();
-    if (enabled) {
-        start_phantom_engine();
-    }
-    NSLog(@"[VirtualCamPro] Ghost Master V233.0 Ready");
+    // DO NOT start engine in ctor to prevent launch hangs
+    NSLog(@"[VirtualCamPro] Sentinel V234.0 Initialized - Waiting for Camera Access");
 }
