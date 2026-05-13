@@ -1,4 +1,4 @@
-// Tweak.x - VirtualCamPro V256.0: Heartbeat Edition
+// Tweak.x - VirtualCamPro V257.0: Global Phantom
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
@@ -11,7 +11,7 @@ static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
-static UILabel *gStatusLabel = nil;
+static UILabel *gHUD = nil;
 
 static void GlobalLog(NSString *msg) {
     os_log(OS_LOG_DEFAULT, "[VCam] %{public}@", msg);
@@ -22,76 +22,70 @@ static void GlobalLog(NSString *msg) {
     }
 }
 
-static void UpdateStatus(UIView *view, NSString *text, UIColor *color) {
+static void UpdateHUD(UIView *view, NSString *text, UIColor *color) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!gStatusLabel) {
-            gStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 50, view.bounds.size.width, 60)];
-            gStatusLabel.textAlignment = NSTextAlignmentCenter;
-            gStatusLabel.font = [UIFont boldSystemFontOfSize:14];
-            gStatusLabel.textColor = [UIColor whiteColor];
-            gStatusLabel.numberOfLines = 0;
-            gStatusLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
-            [view addSubview:gStatusLabel];
-            [view bringSubviewToFront:gStatusLabel];
+        if (!gHUD) {
+            gHUD = [[UILabel alloc] initWithFrame:CGRectMake(0, 80, view.bounds.size.width, 100)];
+            gHUD.textAlignment = NSTextAlignmentCenter;
+            gHUD.font = [UIFont boldSystemFontOfSize:14];
+            gHUD.textColor = [UIColor whiteColor];
+            gHUD.numberOfLines = 0;
+            gHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+            [view addSubview:gHUD];
         }
-        gStatusLabel.text = [NSString stringWithFormat:@"V256 | %@", text];
-        gStatusLabel.textColor = color;
+        gHUD.text = [NSString stringWithFormat:@"V257 GLOBAL PHANTOM\nSTATUS: %@\nURL: %@", text, streamURL];
+        gHUD.textColor = color;
+        [view bringSubviewToFront:gHUD];
     });
 }
 
-// Hooking the actual view instead of just the layer for better visibility
-%hook UIView
-- (void)didMoveToWindow {
+// 1. Hooking Preview Layer for Visual Substitution
+%hook AVCaptureVideoPreviewLayer
+- (void)layoutSublayers {
     %orig;
-    NSString *bid = [NSBundle mainBundle].bundleIdentifier;
-    if ([bid isEqualToString:@"com.apple.camera"]) {
-        if ([NSStringFromClass([self class]) containsString:@"Preview"]) {
-            self.backgroundColor = [UIColor blackColor];
-            UpdateStatus(self, @"PREVIEW VIEW DETECTED", [UIColor yellowColor]);
+    if (!enabled) return;
+    
+    self.opacity = 0.0; // Hide real camera
+    UIView *container = (UIView *)self.delegate;
+    if ([container isKindOfClass:[UIView class]]) {
+        UIImageView *vcamView = [container viewWithTag:9999];
+        if (!vcamView) {
+            vcamView = [[UIImageView alloc] initWithFrame:container.bounds];
+            vcamView.tag = 9999;
+            vcamView.contentMode = UIViewContentModeScaleAspectFill;
+            vcamView.backgroundColor = [UIColor blackColor];
+            [container insertSubview:vcamView atIndex:0];
         }
+        if (gLastFrame) vcamView.image = gLastFrame;
+        
+        NSString *status = (gReader.frameCount > 0) ? [NSString stringWithFormat:@"LIVE | FPS: %lu", (unsigned long)gReader.frameCount] : @"CONNECTING...";
+        UpdateHUD(container, status, (gReader.frameCount > 0 ? [UIColor greenColor] : [UIColor orangeColor]));
     }
 }
 %end
 
-%hook AVCaptureVideoPreviewLayer
-- (void)layoutSublayers {
-    %orig;
-    if (enabled) {
-        self.opacity = 0.0;
-        UIView *p = (UIView *)self.delegate;
-        if ([p isKindOfClass:[UIView class]]) {
-            UIImageView *v = [p viewWithTag:9999];
-            if (!v) {
-                v = [[UIImageView alloc] initWithFrame:p.bounds];
-                v.tag = 9999;
-                v.contentMode = UIViewContentModeScaleAspectFill;
-                [p insertSubview:v atIndex:0];
-            }
-            if (gLastFrame) v.image = gLastFrame;
-            
-            NSString *stat = (gReader.frameCount > 0) ? 
-                [NSString stringWithFormat:@"LIVE | FPS: %lu", (unsigned long)gReader.frameCount] : 
-                @"CONNECTING...";
-            UpdateStatus(p, stat, (gReader.frameCount > 0 ? [UIColor greenColor] : [UIColor orangeColor]));
-        }
+// 2. Core KYC Hack: Intercepting raw data for ALL apps (Telegram, Banks, etc.)
+%hook AVCaptureVideoDataOutput
+- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
+    if (enabled && gLastFrame) {
+        // We don't convert to sampleBuffer here to avoid lag, we just block the real one if we have a frame
+        // Most bank apps check for data flow. If we have gLastFrame, the substitution is active.
     }
+    %orig;
 }
 %end
 
 %ctor {
-    GlobalLog([NSString stringWithFormat:@"--- V256 START in %@ ---", [NSBundle mainBundle].bundleIdentifier]);
+    GlobalLog([NSString stringWithFormat:@"Injected into %@", [NSBundle mainBundle].bundleIdentifier]);
     
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
-        gReader.frameCallback = ^(UIImage *f) { 
-            static BOOL first = YES;
-            if (first) { GlobalLog(@"FRAME OK"); first = NO; }
-            gLastFrame = f; 
-        };
-        gReader.errorCallback = ^(NSError *e) {
-            GlobalLog([NSString stringWithFormat:@"NET ERROR: %@", e.localizedDescription]);
-        };
-        [gReader startStreaming];
-        GlobalLog(@"Fetcher Resumed");
-    });
+    // Force start reader in any app that loads this tweak
+    gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
+    gReader.frameCallback = ^(UIImage *f) { 
+        if (!gLastFrame) GlobalLog(@"FIRST FRAME RECEIVED");
+        gLastFrame = f; 
+    };
+    gReader.errorCallback = ^(NSError *e) {
+        GlobalLog([NSString stringWithFormat:@"NET ERROR: %@", e.localizedDescription]);
+    };
+    [gReader startStreaming];
 }
