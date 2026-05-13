@@ -1,4 +1,4 @@
-// Tweak.x - VirtualCamPro V268.0: Nuclear Capture Protection
+// Tweak.x - VirtualCamPro V269.0: System Sovereign
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
@@ -12,37 +12,41 @@ static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
 static UILabel *gDiagnosticsHUD = nil;
 
-// Create a solid black image programmatically to ensure fallback works
-static UIImage *CreateBlackImage() {
-    CGRect rect = CGRectMake(0, 0, 1, 1);
-    UIGraphicsBeginImageContext(rect.size);
-    CGContextRef context = UIGraphicsGetCurrentContext();
-    CGContextSetFillColorWithColor(context, [[UIColor blackColor] CGColor]);
-    CGContextFillRect(context, rect);
-    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    return img;
+// Pro-level Helper: Convert UIImage to CMSampleBuffer for direct system injection
+static CMSampleBufferRef CreateInjectedBuffer(UIImage *img) {
+    if (!img) return NULL;
+    CGImageRef cg = img.CGImage;
+    CVPixelBufferRef px = NULL;
+    CVReturn s = CVPixelBufferCreate(kCFAllocatorDefault, CGImageGetWidth(cg), CGImageGetHeight(cg), kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)@{ (id)kCVPixelBufferCGImageCompatibilityKey: @YES }, &px);
+    if (s != kCVReturnSuccess) return NULL;
+
+    CMVideoFormatDescriptionRef vdesc = NULL;
+    CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, px, &vdesc);
+    CMSampleTimingInfo t = { kCMTimeInvalid, kCMTimeZero, kCMTimeInvalid };
+    CMSampleBufferRef sb = NULL;
+    CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, px, YES, nil, nil, vdesc, &t, &sb);
+    
+    CFRelease(px);
+    if (vdesc) CFRelease(vdesc);
+    return sb;
 }
 
-static void UpdateDiagnostics(UIView *view, NSString *status, UIColor *color) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (!gDiagnosticsHUD) {
-            gDiagnosticsHUD = [[UILabel alloc] initWithFrame:CGRectMake(0, 100, view.bounds.size.width, 140)];
-            gDiagnosticsHUD.textAlignment = NSTextAlignmentCenter;
-            gDiagnosticsHUD.font = [UIFont fontWithName:@"Courier-Bold" size:12];
-            gDiagnosticsHUD.textColor = [UIColor whiteColor];
-            gDiagnosticsHUD.numberOfLines = 0;
-            gDiagnosticsHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-            [view addSubview:gDiagnosticsHUD];
+// 1. Core Data Injection: Forcing apps to take our frames instead of real ones
+%hook AVCaptureVideoDataOutput
+- (void)captureOutput:(AVCaptureOutput *)o didOutputSampleBuffer:(CMSampleBufferRef)s fromConnection:(AVCaptureConnection *)c {
+    if (enabled && gLastFrame) {
+        CMSampleBufferRef fake = CreateInjectedBuffer(gLastFrame);
+        if (fake) {
+            %orig(o, fake, c);
+            CFRelease(fake);
+            return;
         }
-        gDiagnosticsHUD.text = [NSString stringWithFormat:@"VCAM V268 NUCLEAR\nURL: %@\nSTATUS: %@\nBUFFER: %@", 
-            streamURL, status, (gLastFrame ? @"READY" : @"EMPTY")];
-        gDiagnosticsHUD.textColor = color;
-        [view bringSubviewToFront:gDiagnosticsHUD];
-    });
+    }
+    %orig;
 }
+%end
 
-// 1. Visual Hijack (Preview)
+// 2. Visual Hijack (Preview for user)
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
@@ -55,45 +59,28 @@ static void UpdateDiagnostics(UIView *view, NSString *status, UIColor *color) {
             v = [[UIImageView alloc] initWithFrame:p.bounds];
             v.tag = 9999;
             v.contentMode = UIViewContentModeScaleAspectFill;
-            v.backgroundColor = [UIColor blackColor];
             [p insertSubview:v atIndex:0];
         }
         if (gLastFrame) v.image = gLastFrame;
-        
-        NSString *netStat = (gReader.frameCount > 0) ? [NSString stringWithFormat:@"ACTIVE | FPS: %lu", (unsigned long)gReader.frameCount] : @"CONNECTING...";
-        UpdateDiagnostics(p, netStat, (gReader.frameCount > 0 ? [UIColor greenColor] : [UIColor orangeColor]));
     }
 }
 %end
 
-// 2. Absolute Photo Hijack (Blocking all output paths)
+// 3. Global Capture Hijack (Photo/Video Files)
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (!enabled) return %orig;
-    UIImage *target = gLastFrame ? gLastFrame : CreateBlackImage();
-    return UIImageJPEGRepresentation(target, 0.95);
-}
-
-- (CGImageRef)CGImageRepresentation {
-    if (!enabled) return %orig;
-    UIImage *target = gLastFrame ? gLastFrame : CreateBlackImage();
-    return target.CGImage;
-}
-
-// Newer iOS methods
-- (CVPixelBufferRef)pixelBuffer {
-    if (!enabled) return %orig;
-    // Returning NULL forces the app to use fileDataRepresentation or CGImageRepresentation
-    return NULL;
+    if (enabled && gLastFrame) return UIImageJPEGRepresentation(gLastFrame, 0.95);
+    return %orig;
 }
 %end
 
-// 3. Prevent Real Data Leak for all session types
-%hook AVCaptureVideoDataOutput
-- (void)captureOutput:(AVCaptureOutput *)o didOutputSampleBuffer:(CMSampleBufferRef)s fromConnection:(AVCaptureConnection *)c {
-    if (enabled) {
-        // DO NOT call %orig. This completely cuts the data line from the real lens to the app.
-        // If we have a frame, we could inject it here, but for now we block leakage.
+// 4. Legacy Hijack (For older apps/banks)
+%hook AVCaptureStillImageOutput
+- (void)captureStillImageAsynchronouslyFromConnection:(AVCaptureConnection *)connection completionHandler:(void (^)(CMSampleBufferRef, NSError *))handler {
+    if (enabled && gLastFrame) {
+        CMSampleBufferRef fake = CreateInjectedBuffer(gLastFrame);
+        handler(fake, nil);
+        if (fake) CFRelease(fake);
         return;
     }
     %orig;
@@ -102,7 +89,7 @@ static void UpdateDiagnostics(UIView *view, NSString *status, UIColor *color) {
 
 %ctor {
     NSString *bid = [NSBundle mainBundle].bundleIdentifier;
-    if ([bid containsString:@"camera"] || [bid containsString:@"telegra"] || [bid containsString:@"safari"]) {
+    if ([bid containsString:@"camera"] || [bid containsString:@"telegra"] || [bid containsString:@"safari"] || [bid containsString:@"bank"]) {
         gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
         gReader.frameCallback = ^(UIImage *f) { gLastFrame = f; };
         [gReader startStreaming];
