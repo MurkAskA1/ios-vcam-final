@@ -1,4 +1,4 @@
-// VirtualCamPro V243.0: The Final Masterpiece (Display & KYC Recovery)
+// VirtualCamPro V243.1: The Final Masterpiece (Build Fix)
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -49,15 +49,8 @@ static void inject_vcam(UIView *parent) {
     globalVcamView.userInteractionEnabled = NO;
     globalVcamView.scrollView.scrollEnabled = NO;
 
-    // Using the most robust method for MJPEG: Simple HTML <img> tag.
-    // This ELIMINATES all play buttons, seek bars, and MediaMTX player UI.
-    NSString *html = [NSString stringWithFormat:@"
-        <html><head><style>
-        body { background-color: black; margin: 0; overflow: hidden; }
-        img { width: 100vw; height: 100vh; object-fit: cover; position: absolute; top: 0; left: 0; }
-        </style></head><body>
-        <img src='%@' onerror='this.src=this.src;'>
-        </body></html>", streamURL];
+    // Fixed multi-line string syntax for objective-c
+    NSString *html = [NSString stringWithFormat:@"<html><head><style>body { background-color: black; margin: 0; overflow: hidden; } img { width: 100vw; height: 100vh; object-fit: cover; position: absolute; top: 0; left: 0; }</style></head><body><img src='%@' onerror='this.src=this.src;'></body></html>", streamURL];
 
     [globalVcamView loadHTMLString:html baseURL:[NSURL URLWithString:streamURL]];
 
@@ -115,7 +108,7 @@ static void inject_vcam(UIView *parent) {
 - (PHImageRequestID)requestImageForAsset:(PHAsset *)asset targetSize:(CGSize)size contentMode:(PHImageContentMode)mode options:(PHImageRequestOptions *)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))handler {
     if (enabled && globalLastSnapshot && asset.mediaType == PHAssetMediaTypeImage) {
         NSTimeInterval diff = [[NSDate date] timeIntervalSinceDate:asset.creationDate];
-        if (diff < 60.0) { // Only hijack assets from the last minute
+        if (diff < 60.0) {
             handler(globalLastSnapshot, nil);
             return 1;
         }
