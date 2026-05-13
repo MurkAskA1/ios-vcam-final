@@ -1,9 +1,9 @@
 Package: com.murkaska.virtualcampro
 Name: VirtualCamPro
 Depends: mobilesubstrate, preferenceloader
-Version: 255.0.0
+Version: 256.0.0
 Architecture: iphoneos-arm64
-Description: Virtual Camera for iOS (Diagnostic HUD Edition)
+Description: Virtual Camera for iOS (Visibility & Heartbeat Edition)
 Maintainer: MurkAskA
 Author: MurkAskA
 Section: Tweaks

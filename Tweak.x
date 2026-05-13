@@ -1,4 +1,4 @@
-// Tweak.x - VirtualCamPro V255.0: Diagnostic HUD
+// Tweak.x - VirtualCamPro V256.0: Heartbeat Edition
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
@@ -11,24 +11,47 @@ static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
-static UITextView *gHUD = nil;
+static UILabel *gStatusLabel = nil;
 
-static void VCamHUDLog(NSString *msg) {
+static void GlobalLog(NSString *msg) {
     os_log(OS_LOG_DEFAULT, "[VCam] %{public}@", msg);
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (gHUD) {
-            gHUD.text = [gHUD.text stringByAppendingFormat:@"\n> %@", msg];
-            [gHUD scrollRangeToVisible:NSMakeRange(gHUD.text.length - 1, 1)];
-        }
-    });
-    
-    // Try file log as backup in a more permissive path
     FILE *f = fopen("/var/mobile/Documents/vcam.log", "a");
     if (f) {
         fprintf(f, "[%s] %s\n", [[NSDate date].description UTF8String], [msg UTF8String]);
         fclose(f);
     }
 }
+
+static void UpdateStatus(UIView *view, NSString *text, UIColor *color) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!gStatusLabel) {
+            gStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 50, view.bounds.size.width, 60)];
+            gStatusLabel.textAlignment = NSTextAlignmentCenter;
+            gStatusLabel.font = [UIFont boldSystemFontOfSize:14];
+            gStatusLabel.textColor = [UIColor whiteColor];
+            gStatusLabel.numberOfLines = 0;
+            gStatusLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+            [view addSubview:gStatusLabel];
+            [view bringSubviewToFront:gStatusLabel];
+        }
+        gStatusLabel.text = [NSString stringWithFormat:@"V256 | %@", text];
+        gStatusLabel.textColor = color;
+    });
+}
+
+// Hooking the actual view instead of just the layer for better visibility
+%hook UIView
+- (void)didMoveToWindow {
+    %orig;
+    NSString *bid = [NSBundle mainBundle].bundleIdentifier;
+    if ([bid isEqualToString:@"com.apple.camera"]) {
+        if ([NSStringFromClass([self class]) containsString:@"Preview"]) {
+            self.backgroundColor = [UIColor blackColor];
+            UpdateStatus(self, @"PREVIEW VIEW DETECTED", [UIColor yellowColor]);
+        }
+    }
+}
+%end
 
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
@@ -42,50 +65,33 @@ static void VCamHUDLog(NSString *msg) {
                 v = [[UIImageView alloc] initWithFrame:p.bounds];
                 v.tag = 9999;
                 v.contentMode = UIViewContentModeScaleAspectFill;
-                v.backgroundColor = [UIColor blackColor];
                 [p insertSubview:v atIndex:0];
-                
-                // Create HUD
-                gHUD = [[UITextView alloc] initWithFrame:CGRectMake(10, 40, p.bounds.size.width - 20, 150)];
-                gHUD.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.5];
-                gHUD.textColor = [UIColor greenColor];
-                gHUD.font = [UIFont fontWithName:@"Courier" size:10];
-                gHUD.editable = NO;
-                gHUD.selectable = NO;
-                gHUD.userInteractionEnabled = NO;
-                gHUD.text = @"--- VCAM V255 DIAGNOSTIC HUD ---";
-                [p addSubview:gHUD];
             }
             if (gLastFrame) v.image = gLastFrame;
+            
+            NSString *stat = (gReader.frameCount > 0) ? 
+                [NSString stringWithFormat:@"LIVE | FPS: %lu", (unsigned long)gReader.frameCount] : 
+                @"CONNECTING...";
+            UpdateStatus(p, stat, (gReader.frameCount > 0 ? [UIColor greenColor] : [UIColor orangeColor]));
         }
     }
 }
 %end
 
 %ctor {
-    os_log(OS_LOG_DEFAULT, "[VCam] Constructor start");
+    GlobalLog([NSString stringWithFormat:@"--- V256 START in %@ ---", [NSBundle mainBundle].bundleIdentifier]);
     
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        VCamHUDLog([NSString stringWithFormat:@"Init in: %@", [NSBundle mainBundle].bundleIdentifier]);
-        VCamHUDLog([NSString stringWithFormat:@"URL: %@", streamURL]);
-        
-        NSURL *url = [NSURL URLWithString:[streamURL stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]];
-        if (!url) {
-            VCamHUDLog(@"CRITICAL: Invalid URL");
-            return;
-        }
-        
-        gReader = [[MJPEGStreamReader alloc] initWithURL:url];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
         gReader.frameCallback = ^(UIImage *f) { 
-            static BOOL firstFrame = YES;
-            if (firstFrame) { VCamHUDLog(@"FIRST FRAME RECEIVED!"); firstFrame = NO; }
+            static BOOL first = YES;
+            if (first) { GlobalLog(@"FRAME OK"); first = NO; }
             gLastFrame = f; 
         };
         gReader.errorCallback = ^(NSError *e) {
-            VCamHUDLog([NSString stringWithFormat:@"STREAM ERROR: %@", e.localizedDescription]);
+            GlobalLog([NSString stringWithFormat:@"NET ERROR: %@", e.localizedDescription]);
         };
-        
-        VCamHUDLog(@"Starting network fetcher...");
         [gReader startStreaming];
+        GlobalLog(@"Fetcher Resumed");
     });
 }

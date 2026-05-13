@@ -9,8 +9,6 @@
 			<string>com.apple.camera</string>
 			<string>com.apple.mobilesafari</string>
 			<string>org.telegram.messenger</string>
-			<string>com.apple.WebKit.WebContent</string>
-			<string>com.apple.PhotosUI</string>
 		</array>
 	</dict>
 </dict>
