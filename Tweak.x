@@ -1,4 +1,4 @@
-// VirtualCamPro V242.0: The Ultimate Display & KYC Fix
+// VirtualCamPro V243.0: The Final Masterpiece (Display & KYC Recovery)
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -14,11 +14,11 @@ static void load_prefs() {
     if (prefs) {
         enabled = prefs[@"enabled"] ? [prefs[@"enabled"] boolValue] : YES;
         NSString *u = prefs[@"rtspURL"];
-        if (u && u.length > 5) streamURL = u;
+        if (u && [u length] > 5) streamURL = u;
     }
 }
 
-// Global Bypass for local networking and HTTP
+// ATS Bypass to allow raw HTTP streams
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
     if ([key isEqualToString:@"NSAppTransportSecurity"]) {
@@ -42,36 +42,29 @@ static void inject_vcam(UIView *parent) {
     config.allowsInlineMediaPlayback = YES;
     config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
 
-    // Improved JS: Force play and hide all UI elements including MediaMTX specific ones
-    NSString *js = @"(function() { " 
-                    "  let s = document.createElement('style'); " 
-                    "  s.innerHTML = 'body, html { background: black !important; margin: 0; padding: 0; overflow: hidden; width: 100vw; height: 100vh; } " 
-                    "                 video, img { width: 100vw !important; height: 100vh !important; object-fit: cover !important; position: absolute; top:0; left:0; pointer-events: none !important; } " 
-                    "                 .vjs-control-bar, .vjs-big-play-button, .live-badge, .player-controls, .controls, #ui { display: none !important; }'; " 
-                    "  document.head.appendChild(s); " 
-                    "  setInterval(() => { " 
-                    "    let v = document.querySelector('video'); " 
-                    "    if(v) { v.muted = true; v.playsInline = true; v.controls = false; if(v.paused) v.play().catch(e=>{}); } " 
-                    "  }, 500); " 
-                    "})();";
-
-    WKUserScript *script = [[WKUserScript alloc] initWithSource:js injectionTime:WKUserScriptInjectionTimeAtDocumentEnd forMainFrameOnly:YES];
-    [config.userContentController addUserScript:script];
-
     globalVcamView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
     globalVcamView.backgroundColor = [UIColor blackColor];
     globalVcamView.scrollView.backgroundColor = [UIColor blackColor];
     globalVcamView.opaque = YES;
     globalVcamView.userInteractionEnabled = NO;
-    globalVcamView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    globalVcamView.scrollView.scrollEnabled = NO;
 
-    NSURLRequest *req = [NSURLRequest requestWithURL:[NSURL URLWithString:streamURL] cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:15.0];
-    [globalVcamView loadRequest:req];
+    // Using the most robust method for MJPEG: Simple HTML <img> tag.
+    // This ELIMINATES all play buttons, seek bars, and MediaMTX player UI.
+    NSString *html = [NSString stringWithFormat:@"
+        <html><head><style>
+        body { background-color: black; margin: 0; overflow: hidden; }
+        img { width: 100vw; height: 100vh; object-fit: cover; position: absolute; top: 0; left: 0; }
+        </style></head><body>
+        <img src='%@' onerror='this.src=this.src;'>
+        </body></html>", streamURL];
+
+    [globalVcamView loadHTMLString:html baseURL:[NSURL URLWithString:streamURL]];
 
     [parent insertSubview:globalVcamView atIndex:0];
     
-    // Snapshot loop for gallery
-    [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *t) {
+    // Snapshot loop for gallery hijack
+    [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
         if (globalVcamView) {
             [globalVcamView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
                 if (img) globalLastSnapshot = img;
@@ -84,7 +77,7 @@ static void inject_vcam(UIView *parent) {
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
-        self.opacity = 0.0;
+        self.opacity = 0.0; // Hide the real camera output
         UIView *target = (UIView *)self.delegate;
         if ([target isKindOfClass:[UIView class]]) {
             inject_vcam(target);
@@ -94,22 +87,22 @@ static void inject_vcam(UIView *parent) {
 }
 %end
 
-// Anti-KYC Device Identity
+// Anti-KYC Masking
 %hook AVCaptureDevice
 - (NSString *)uniqueID { return @"com.apple.avfoundation.avcapturedevice.built-in_video:back"; }
 - (NSString *)localizedName { return @"Back Camera"; }
 - (BOOL)isVirtualDevice { return NO; }
 %end
 
-// Hijack photo capture
+// Hijack final photo capture
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && globalLastSnapshot) return UIImageJPEGRepresentation(globalLastSnapshot, 0.9);
+    if (enabled && globalLastSnapshot) return UIImageJPEGRepresentation(globalLastSnapshot, 0.95);
     return %orig;
 }
 %end
 
-// Hijack gallery thumbnail
+// Hijack camera preview bubble
 %hook CAMImageWell
 - (void)setThumbnailImage:(UIImage *)image {
     if (enabled && globalLastSnapshot) %orig(globalLastSnapshot);
@@ -117,14 +110,14 @@ static void inject_vcam(UIView *parent) {
 }
 %end
 
-// Hijack Photos Database for Recent Thumbnails
+// Hijack Gallery Thumbnails (Liveness/Recent Photos Fix)
 %hook PHImageManager
 - (PHImageRequestID)requestImageForAsset:(PHAsset *)asset targetSize:(CGSize)size contentMode:(PHImageContentMode)mode options:(PHImageRequestOptions *)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))handler {
     if (enabled && globalLastSnapshot && asset.mediaType == PHAssetMediaTypeImage) {
         NSTimeInterval diff = [[NSDate date] timeIntervalSinceDate:asset.creationDate];
-        if (diff < 30.0) {
+        if (diff < 60.0) { // Only hijack assets from the last minute
             handler(globalLastSnapshot, nil);
-            return 0;
+            return 1;
         }
     }
     return %orig;
