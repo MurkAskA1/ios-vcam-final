@@ -1,6 +1,7 @@
-// MJPEGStreamReader.m - VirtualCamPro V247.0
+// MJPEGStreamReader.m - VirtualCamPro V247.1
 #import "MJPEGStreamReader.h"
 #import <objc/runtime.h>
+#import <objc/message.h> // Added missing header for objc_msgSend
 
 static void VCamLog(NSString *format, ...) {
     va_list args;
