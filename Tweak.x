@@ -9,7 +9,7 @@
 
 static BOOL enabled = YES;
 // ✅ ТВЕ RTSP SERVER MJPEG STREAM
-static NSString *streamURL = @"http://192.168.1.44:8888/live/stream";
+static NSString *streamURL = @"http://192.168.1.44:8887/live/stream";
 
 static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
