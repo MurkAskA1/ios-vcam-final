@@ -1,4 +1,4 @@
-// MJPEGStreamReader.h - VirtualCamPro V246.0
+// MJPEGStreamReader.h - VirtualCamPro V247.0
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
