@@ -15,6 +15,9 @@
 			<string>com.apple.assetsd</string>
 			<string>com.apple.PhotosUI</string>
 			<string>com.apple.SafariViewService</string>
+			<string>com.apple.mobilesafari</string>
+			<string>com.google.chrome.ios</string>
+			<string>org.telegram.messenger</string>
 		</array>
 	</dict>
 </dict>
