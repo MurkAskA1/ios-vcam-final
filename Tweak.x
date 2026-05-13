@@ -1,4 +1,4 @@
-// VirtualCamPro V228.0: The Direct Stream Master (Broken Link Fix)
+// VirtualCamPro V229.0: The Stealth Void (Black Background & ATS Fix)
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -27,17 +27,21 @@ static void load_vcam_prefs() {
     }
 }
 
-// --- Global ATS Fix ---
+// --- Global ATS Fix: Critical for HTTP Streams ---
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
     if ([key isEqualToString:@"NSAppTransportSecurity"]) {
-        return @{ @"NSAllowsArbitraryLoads": @YES, @"NSAllowsArbitraryLoadsInWebContent": @YES, @"NSAllowsLocalNetworking": @YES };
+        return @{ 
+            @"NSAllowsArbitraryLoads": @YES, 
+            @"NSAllowsArbitraryLoadsInWebContent": @YES, 
+            @"NSAllowsLocalNetworking": @YES 
+        };
     }
     return %orig;
 }
 %end
 
-// --- Snapshot Logic for Photo Hijack ---
+// --- Continuous Snapshot for Photo Hijack ---
 static void start_frame_capture() {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -51,8 +55,8 @@ static void start_frame_capture() {
     });
 }
 
-// --- Direct Stream Injection (No HTML Wrapper) ---
-static void inject_vcam_direct(UIView *parent) {
+// --- Visual Hijack (The "Black Void" Engine) ---
+static void inject_vcam_into_view(UIView *parent) {
     if (!parent || !enabled) return;
     
     if (globalVcamView && globalVcamView.superview == parent) {
@@ -64,18 +68,34 @@ static void inject_vcam_direct(UIView *parent) {
 
     WKWebViewConfiguration *config = [WKWebViewConfiguration new];
     config.allowsInlineMediaPlayback = YES;
+    config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     
     globalVcamView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
+    
+    // Force absolute black everywhere to kill the white screen
     globalVcamView.backgroundColor = [UIColor blackColor];
     globalVcamView.scrollView.backgroundColor = [UIColor blackColor];
+    if (@available(iOS 15.0, *)) {
+        globalVcamView.underPageBackgroundColor = [UIColor blackColor];
+    }
+    
     globalVcamView.opaque = YES;
     globalVcamView.userInteractionEnabled = NO;
     globalVcamView.scrollView.scrollEnabled = NO;
 
-    // Load the URL DIRECTLY like Chrome does. This avoids "Question Mark" placeholders.
-    NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:streamURL]];
-    [globalVcamView loadRequest:request];
+    // HTML with explicit black background style to prevent white flashes
+    NSString *html = [NSString stringWithFormat:
+        @"<html><head><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'>"
+        "<style>"
+        "body{margin:0;padding:0;background-color:black !important;overflow:hidden;width:100%%;height:100%%;} "
+        "img{width:100%%;height:100%%;object-fit:cover;position:absolute;top:0;left:0;}"
+        "</style></head><body style='background-color:black;'>"
+        "<img src='%@' onerror=\"this.src=this.src;\">"
+        "</body></html>", streamURL];
     
+    [globalVcamView loadHTMLString:html baseURL:nil];
+    
+    // Sits at the absolute bottom layer
     [parent insertSubview:globalVcamView atIndex:0];
     
     start_frame_capture();
@@ -90,14 +110,24 @@ static void inject_vcam_direct(UIView *parent) {
         else if ([self.superlayer.delegate isKindOfClass:[UIView class]]) target = (UIView *)self.superlayer.delegate;
 
         if (target) {
-            inject_vcam_direct(target);
+            inject_vcam_into_view(target);
             globalVcamView.frame = target.bounds;
         }
     }
 }
 %end
 
-// --- Anti-KYC Spoofing ---
+// --- Disable Real Preview Data ---
+%hook AVCaptureConnection
+- (BOOL)isEnabled {
+    if (enabled && [self.output isKindOfClass:NSClassFromString(@"AVCaptureVideoPreviewLayer")]) {
+        return NO; // Make real camera transparent
+    }
+    return %orig;
+}
+%end
+
+// --- Anti-KYC Identity Spoofing ---
 %hook AVCaptureDevice
 - (NSString *)uniqueID { return @"com.apple.avfoundation.avcapturedevice.built-in_video:back"; }
 - (NSString *)localizedName { return @"Back Camera"; }
@@ -105,6 +135,7 @@ static void inject_vcam_direct(UIView *parent) {
 - (BOOL)isVirtualDevice { return NO; }
 %end
 
+// --- Global Capture Hijack ---
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
     if (enabled && globalLastImage) return UIImageJPEGRepresentation(globalLastImage, 0.95);
@@ -121,5 +152,5 @@ static void inject_vcam_direct(UIView *parent) {
 
 %ctor {
     load_vcam_prefs();
-    NSLog(@"[VirtualCamPro] Direct Stream Master V228.0 Active");
+    NSLog(@"[VirtualCamPro] The Stealth Void V229.0 Active");
 }
