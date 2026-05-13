@@ -1,4 +1,4 @@
-// Tweak.x - VirtualCamPro V252.0: The Final Restoration
+// Tweak.x - VirtualCamPro V253.0: Forensic Logger
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
@@ -11,33 +11,38 @@ static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
 
-static CMSampleBufferRef CreateBufferFromImage(UIImage *img) {
-    if (!img) return NULL;
-    CGImageRef cg = img.CGImage;
-    CVPixelBufferRef px = NULL;
-    CVReturn s = CVPixelBufferCreate(kCFAllocatorDefault, CGImageGetWidth(cg), CGImageGetHeight(cg), kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)@{ (id)kCVPixelBufferCGImageCompatibilityKey: @YES }, &px);
-    if (s != kCVReturnSuccess) return NULL;
-
-    CMVideoFormatDescriptionRef vdesc = NULL;
-    CMVideoFormatDescriptionCreateForImageBuffer(nil, px, &vdesc);
-    CMSampleTimingInfo t = { kCMTimeInvalid, kCMTimeZero, kCMTimeInvalid };
-    CMSampleBufferRef sb = NULL;
-    CMSampleBufferCreateForImageBuffer(nil, px, YES, nil, nil, vdesc, &t, &sb);
+// Logging helper to write to a file for Filza inspection
+static void VCamLog(NSString *format, ...) {
+    va_list args;
+    va_start(args, format);
+    NSString *msg = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
     
-    CFRelease(px);
-    if (vdesc) CFRelease(vdesc);
-    return sb;
+    NSString *line = [NSString stringWithFormat:@"[VCam][%@] %@\n", [NSDate date], msg];
+    NSLog(@"%@", line);
+    
+    @try {
+        NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/vcam.log"];
+        if (!fh) {
+            [[NSFileManager defaultManager] createFileAtPath:@"/tmp/vcam.log" contents:nil attributes:nil];
+            fh = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/vcam.log"];
+        }
+        if (fh) {
+            [fh seekToEndOfFile];
+            [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+            [fh closeFile];
+        }
+    } @catch (NSException *e) {}
 }
 
 static void UpdateLabel(UIView *h, NSString *s, UIColor *c) {
-    if (![[NSBundle mainBundle].bundleIdentifier isEqualToString:@"com.apple.camera"]) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         UILabel *l = (UILabel *)[h viewWithTag:7777];
         if (!l) {
-            l = [[UILabel alloc] initWithFrame:CGRectMake(0, 80, h.bounds.size.width, 40)];
+            l = [[UILabel alloc] initWithFrame:CGRectMake(0, 100, h.bounds.size.width, 60)];
             l.tag = 7777;
             l.textAlignment = NSTextAlignmentCenter;
-            l.font = [UIFont boldSystemFontOfSize:16];
+            l.font = [UIFont boldSystemFontOfSize:14];
             l.textColor = [UIColor whiteColor];
             l.numberOfLines = 0;
             [h addSubview:l];
@@ -56,48 +61,40 @@ static void UpdateLabel(UIView *h, NSString *s, UIColor *c) {
         if ([p isKindOfClass:[UIView class]]) {
             UIImageView *v = [p viewWithTag:9999];
             if (!v) {
+                VCamLog(@"Creating overlay view in process: %@", [NSBundle mainBundle].bundleIdentifier);
                 v = [[UIImageView alloc] initWithFrame:p.bounds];
                 v.tag = 9999;
                 v.contentMode = UIViewContentModeScaleAspectFill;
+                v.backgroundColor = [UIColor blackColor];
                 [p insertSubview:v atIndex:0];
             }
             if (gLastFrame) v.image = gLastFrame;
-            if (gReader.frameCount > 0) {
-                UpdateLabel(p, [NSString stringWithFormat:@"V252.0 | LIVE | FPS: %lu", (unsigned long)gReader.frameCount], [UIColor greenColor]);
-            } else {
-                UpdateLabel(p, [NSString stringWithFormat:@"V252.0 | CONNECTING...\nURL: %@", streamURL], [UIColor orangeColor]);
-            }
+            
+            NSString *status = (gReader.frameCount > 0) ? 
+                [NSString stringWithFormat:@"V253 | LIVE | FPS: %lu", (unsigned long)gReader.frameCount] : 
+                [NSString stringWithFormat:@"V253 | WAITING...\nURL: %@", streamURL];
+            
+            UpdateLabel(p, status, (gReader.frameCount > 0 ? [UIColor greenColor] : [UIColor orangeColor]));
         }
     }
-}
-%end
-
-%hook AVCaptureVideoDataOutput
-- (void)captureOutput:(AVCaptureOutput *)o didOutputSampleBuffer:(CMSampleBufferRef)s fromConnection:(AVCaptureConnection *)c {
-    if (enabled && gLastFrame) {
-        CMSampleBufferRef f = CreateBufferFromImage(gLastFrame);
-        if (f) {
-            %orig(o, f, c);
-            CFRelease(f);
-            return;
-        }
-    }
-    %orig(o, s, c);
-}
-%end
-
-%hook AVCapturePhoto
-- (NSData *)fileDataRepresentation {
-    if (enabled && gLastFrame) return UIImageJPEGRepresentation(gLastFrame, 0.9);
-    return %orig;
 }
 %end
 
 %ctor {
-    NSString *b = [NSBundle mainBundle].bundleIdentifier;
-    if ([b isEqualToString:@"com.apple.camera"] || [b isEqualToString:@"org.telegram.messenger"] || [b containsString:@"safari"] || [b containsString:@"chrome"]) {
+    VCamLog(@"--- VirtualCamPro V253.0 Loaded in %@ ---", [NSBundle mainBundle].bundleIdentifier);
+    
+    // Only start networking if we are in an app, not a background daemon
+    if ([UIApplication sharedApplication]) {
+        VCamLog(@"Starting stream reader for %@", streamURL);
         gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
-        gReader.frameCallback = ^(UIImage *f) { gLastFrame = f; };
+        gReader.frameCallback = ^(UIImage *f) { 
+            gLastFrame = f; 
+        };
+        gReader.errorCallback = ^(NSError *e) {
+            VCamLog(@"Stream Error: %@", e.localizedDescription);
+        };
         [gReader startStreaming];
+    } else {
+        VCamLog(@"Skipping network start - not a UI app");
     }
 }
