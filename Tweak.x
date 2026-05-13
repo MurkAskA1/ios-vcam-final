@@ -1,45 +1,35 @@
-// Tweak.x - VirtualCamPro V247.0: The Diagnostic Master
+// Tweak.x - VirtualCamPro V248.0: The Final Force
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
-#import <objc/runtime.h>
 #import "MJPEGStreamReader.h"
 
-static BOOL enabled = YES;
+static BOOL enabled = YES; // FORCED ON FOR DEBUGGING
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
-static UILabel *gStatusLabel = nil;
+static UIWindow *gDiagnosticWindow = nil;
+static UILabel *gDiagLabel = nil;
 
-static void load_prefs() {
-    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
-    if (prefs) {
-        enabled = prefs[@"enabled"] ? [prefs[@"enabled"] boolValue] : YES;
-        NSString *u = prefs[@"rtspURL"];
-        if (u && [u length] > 5) streamURL = u;
-    }
-}
-
-static void VCamInstallOverlay(UIView *host) {
-    if (!host || !enabled) return;
-    UIImageView *vcam = [host viewWithTag:9999];
-    if (!vcam) {
-        vcam = [[UIImageView alloc] initWithFrame:host.bounds];
-        vcam.tag = 9999;
-        vcam.contentMode = UIViewContentModeScaleAspectFill;
-        vcam.backgroundColor = [UIColor blackColor];
-        vcam.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        [host insertSubview:vcam atIndex:0];
-        
-        gStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, host.bounds.size.height/2 - 60, host.bounds.size.width, 120)];
-        gStatusLabel.textColor = [UIColor whiteColor];
-        gStatusLabel.backgroundColor = [UIColor colorWithWhite:0 alpha:0.8];
-        gStatusLabel.font = [UIFont boldSystemFontOfSize:15];
-        gStatusLabel.textAlignment = NSTextAlignmentCenter;
-        gStatusLabel.numberOfLines = 0;
-        gStatusLabel.text = [NSString stringWithFormat:@"VirtualCam Diagnostic\nStatus: Connecting...\nURL: %@", streamURL];
-        [host addSubview:gStatusLabel];
-    }
+static void VCamShowDiagnostic(NSString *text, UIColor *color) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!gDiagnosticWindow) {
+            gDiagnosticWindow = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, [UIScreen mainScreen].bounds.size.width, 100)];
+            gDiagnosticWindow.windowLevel = UIWindowLevelStatusBar + 1;
+            gDiagnosticWindow.backgroundColor = [UIColor clearColor];
+            gDiagnosticWindow.userInteractionEnabled = NO;
+            
+            gDiagLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, gDiagnosticWindow.bounds.size.width, 60)];
+            gDiagLabel.textAlignment = NSTextAlignmentCenter;
+            gDiagLabel.numberOfLines = 0;
+            gDiagLabel.font = [UIFont boldSystemFontOfSize:12];
+            gDiagLabel.textColor = [UIColor whiteColor];
+            [gDiagnosticWindow addSubview:gDiagLabel];
+            [gDiagnosticWindow setHidden:NO];
+        }
+        gDiagLabel.text = text;
+        gDiagLabel.backgroundColor = [color colorWithAlphaComponent:0.7];
+    });
 }
 
 %hook AVCaptureVideoPreviewLayer
@@ -49,16 +39,14 @@ static void VCamInstallOverlay(UIView *host) {
         self.opacity = 0.0;
         UIView *p = (UIView *)self.delegate;
         if ([p isKindOfClass:[UIView class]]) {
-            VCamInstallOverlay(p);
-            UIImageView *vcam = [p viewWithTag:9999];
-            if (vcam) vcam.image = gLastFrame;
-            if (gStatusLabel && gReader) {
-                if (gReader.frameCount > 0) {
-                    gStatusLabel.hidden = YES; // Hide diagnostic when live
-                } else {
-                    gStatusLabel.text = [NSString stringWithFormat:@"VirtualCam Diagnostic\nStatus: Connecting...\nURL: %@", streamURL];
-                }
+            UIImageView *v = [p viewWithTag:9999];
+            if (!v) {
+                v = [[UIImageView alloc] initWithFrame:p.bounds];
+                v.tag = 9999;
+                v.contentMode = UIViewContentModeScaleAspectFill;
+                [p insertSubview:v atIndex:0];
             }
+            if (gLastFrame) v.image = gLastFrame;
         }
     }
 }
@@ -66,27 +54,22 @@ static void VCamInstallOverlay(UIView *host) {
 
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && gLastFrame) return UIImageJPEGRepresentation(gLastFrame, 0.95);
+    if (enabled && gLastFrame) return UIImageJPEGRepresentation(gLastFrame, 0.9);
     return %orig;
-}
-- (CGImageRef)CGImageRepresentation {
-    if (enabled && gLastFrame) return gLastFrame.CGImage;
-    return %orig;
-}
-%end
-
-%hook CAMImageWell
-- (void)setThumbnailImage:(UIImage *)image {
-    if (enabled && gLastFrame) %orig(gLastFrame);
-    else %orig(image);
 }
 %end
 
 %ctor {
-    load_prefs();
-    if (enabled) {
-        gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
-        gReader.frameCallback = ^(UIImage *frame) { gLastFrame = frame; };
-        [gReader startStreaming];
-    }
+    // Forced settings skip for reliability
+    VCamShowDiagnostic([NSString stringWithFormat:@"VCam 248 Loaded\nURL: %@", streamURL], [UIColor orangeColor]);
+    
+    gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
+    gReader.frameCallback = ^(UIImage *frame) {
+        gLastFrame = frame;
+        VCamShowDiagnostic([NSString stringWithFormat:@"Live | FPS: %lu", (unsigned long)gReader.frameCount], [UIColor greenColor]);
+    };
+    gReader.errorCallback = ^(NSError *err) {
+        VCamShowDiagnostic([NSString stringWithFormat:@"Error: %ld\n%@", (long)err.code, err.localizedDescription], [UIColor redColor]);
+    };
+    [gReader startStreaming];
 }
