@@ -5,7 +5,7 @@ ARCHS = arm64
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = VirtualCamPro
-VirtualCamPro_FILES = Tweak.x
+VirtualCamPro_FILES = Tweak.x MJPEGStreamReader.m
 VirtualCamPro_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 VirtualCamPro_FRAMEWORKS = UIKit WebKit AVFoundation CoreMedia CoreVideo QuartzCore CoreGraphics CoreImage Photos PhotosUI Foundation
 VirtualCamPro_LDFLAGS += -undefined dynamic_lookup
