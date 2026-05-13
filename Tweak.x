@@ -1,13 +1,56 @@
-// VirtualCamPro V243.1: The Final Masterpiece (Build Fix)
+// VirtualCamPro V244.0: The Core Destroyer (Native Engine)
 #import <UIKit/UIKit.h>
-#import <WebKit/WebKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
 
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
-static WKWebView *globalVcamView = nil;
-static UIImage *globalLastSnapshot = nil;
+static UIImage *globalNativeFrame = nil;
+
+@interface VCAMNativeFetcher : NSObject <NSURLSessionDataDelegate>
+@property (strong) NSURLSessionDataTask *task;
+@property (strong) NSMutableData *buffer;
+- (void)start;
+@end
+
+@implementation VCAMNativeFetcher
+- (instancetype)init {
+    if (self = [super init]) {
+        _buffer = [[NSMutableData alloc] init];
+    }
+    return self;
+}
+- (void)start {
+    NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration defaultSessionConfiguration];
+    cfg.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:cfg delegate:self delegateQueue:[NSOperationQueue mainQueue]];
+    _task = [session dataTaskWithURL:[NSURL URLWithString:streamURL]];
+    [_task resume];
+}
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
+    [_buffer appendData:data];
+    const unsigned char startMarker[] = {0xff, 0xd8};
+    const unsigned char endMarker[] = {0xff, 0xd9};
+    NSData *startData = [NSData dataWithBytes:startMarker length:2];
+    NSData *endData = [NSData dataWithBytes:endMarker length:2];
+    
+    NSRange startRange = [_buffer rangeOfData:startData options:NSDataSearchBackwards range:NSMakeRange(0, [_buffer length])];
+    if (startRange.location != NSNotFound) {
+        NSRange searchRange = NSMakeRange(startRange.location, [_buffer length] - startRange.location);
+        NSRange endRange = [_buffer rangeOfData:endData options:0 range:searchRange];
+        if (endRange.location != NSNotFound) {
+            NSRange imgRange = NSMakeRange(startRange.location, endRange.location - startRange.location + 2);
+            NSData *jpgData = [_buffer subdataWithRange:imgRange];
+            UIImage *img = [UIImage imageWithData:jpgData];
+            if (img) globalNativeFrame = img;
+            [_buffer replaceBytesInRange:NSMakeRange(0, endRange.location + 2) withBytes:NULL length:0];
+        }
+    }
+    if ([_buffer length] > 1024 * 1024 * 5) [_buffer setLength:0];
+}
+@end
+
+static VCAMNativeFetcher *fetcher = nil;
 
 static void load_prefs() {
     NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
@@ -18,7 +61,6 @@ static void load_prefs() {
     }
 }
 
-// ATS Bypass to allow raw HTTP streams
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
     if ([key isEqualToString:@"NSAppTransportSecurity"]) {
@@ -28,95 +70,59 @@ static void load_prefs() {
 }
 %end
 
-static void inject_vcam(UIView *parent) {
-    if (!parent || !enabled) return;
-    
-    if (globalVcamView && globalVcamView.superview == parent) {
-        [parent sendSubviewToBack:globalVcamView];
-        return;
-    }
-    
-    if (globalVcamView) [globalVcamView removeFromSuperview];
-
-    WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
-    config.allowsInlineMediaPlayback = YES;
-    config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
-
-    globalVcamView = [[WKWebView alloc] initWithFrame:parent.bounds configuration:config];
-    globalVcamView.backgroundColor = [UIColor blackColor];
-    globalVcamView.scrollView.backgroundColor = [UIColor blackColor];
-    globalVcamView.opaque = YES;
-    globalVcamView.userInteractionEnabled = NO;
-    globalVcamView.scrollView.scrollEnabled = NO;
-
-    // Fixed multi-line string syntax for objective-c
-    NSString *html = [NSString stringWithFormat:@"<html><head><style>body { background-color: black; margin: 0; overflow: hidden; } img { width: 100vw; height: 100vh; object-fit: cover; position: absolute; top: 0; left: 0; }</style></head><body><img src='%@' onerror='this.src=this.src;'></body></html>", streamURL];
-
-    [globalVcamView loadHTMLString:html baseURL:[NSURL URLWithString:streamURL]];
-
-    [parent insertSubview:globalVcamView atIndex:0];
-    
-    // Snapshot loop for gallery hijack
-    [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
-        if (globalVcamView) {
-            [globalVcamView takeSnapshotWithConfiguration:nil completionHandler:^(UIImage *img, NSError *err) {
-                if (img) globalLastSnapshot = img;
-            }];
-        }
-    }];
-}
-
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (enabled) {
-        self.opacity = 0.0; // Hide the real camera output
-        UIView *target = (UIView *)self.delegate;
-        if ([target isKindOfClass:[UIView class]]) {
-            inject_vcam(target);
-            globalVcamView.frame = target.bounds;
+        self.opacity = 0.0;
+        UIView *p = (UIView *)self.delegate;
+        if ([p isKindOfClass:[UIView class]]) {
+            UIImageView *v = [p viewWithTag:8888];
+            if (!v) {
+                v = [[UIImageView alloc] initWithFrame:p.bounds];
+                v.tag = 8888;
+                v.contentMode = UIViewContentModeScaleAspectFill;
+                v.clipsToBounds = YES;
+                v.backgroundColor = [UIColor blackColor];
+                [p insertSubview:v atIndex:0];
+            }
+            if (globalNativeFrame) v.image = globalNativeFrame;
         }
     }
 }
 %end
 
-// Anti-KYC Masking
-%hook AVCaptureDevice
-- (NSString *)uniqueID { return @"com.apple.avfoundation.avcapturedevice.built-in_video:back"; }
-- (NSString *)localizedName { return @"Back Camera"; }
-- (BOOL)isVirtualDevice { return NO; }
-%end
-
-// Hijack final photo capture
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && globalLastSnapshot) return UIImageJPEGRepresentation(globalLastSnapshot, 0.95);
+    if (enabled && globalNativeFrame) return UIImageJPEGRepresentation(globalNativeFrame, 0.9);
     return %orig;
 }
 %end
 
-// Hijack camera preview bubble
 %hook CAMImageWell
 - (void)setThumbnailImage:(UIImage *)image {
-    if (enabled && globalLastSnapshot) %orig(globalLastSnapshot);
+    if (enabled && globalNativeFrame) %orig(globalNativeFrame);
     else %orig(image);
 }
 %end
 
-// Hijack Gallery Thumbnails (Liveness/Recent Photos Fix)
 %hook PHImageManager
 - (PHImageRequestID)requestImageForAsset:(PHAsset *)asset targetSize:(CGSize)size contentMode:(PHImageContentMode)mode options:(PHImageRequestOptions *)options resultHandler:(void (^)(UIImage *result, NSDictionary *info))handler {
-    if (enabled && globalLastSnapshot && asset.mediaType == PHAssetMediaTypeImage) {
+    if (enabled && globalNativeFrame && asset.mediaType == PHAssetMediaTypeImage) {
         NSTimeInterval diff = [[NSDate date] timeIntervalSinceDate:asset.creationDate];
         if (diff < 60.0) {
-            handler(globalLastSnapshot, nil);
-            return 1;
+            handler(globalNativeFrame, nil);
+            return 0;
         }
     }
-    return %orig;
+    return %orig(asset, size, mode, options, handler);
 }
 %end
 
 %ctor {
     load_prefs();
+    if (enabled) {
+        fetcher = [[VCAMNativeFetcher alloc] init];
+        [fetcher start];
+    }
 }
