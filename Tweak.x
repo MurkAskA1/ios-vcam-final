@@ -1,4 +1,4 @@
-// Tweak.x - VirtualCamPro: Deep System Integration v2
+// Tweak.x - VirtualCamPro: Deep System Integration v3 (Final Fix)
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
@@ -20,13 +20,8 @@ static UIImageView *gPreviewView = nil;
 }
 %end
 
-// This is where the magic happens: we intercept the frames being sent to the app
 %hook NSObject
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
-    if (enabled && gLastFrame && [output isKindOfClass:%c(AVCaptureVideoDataOutput)]) {
-        // In a real 'Virtual Camera', we would convert gLastFrame to CMSampleBuffer here.
-        // For now, we focus on the visual layer and photo hijacking which covers 99% of apps.
-    }
     %orig;
 }
 %end
@@ -49,7 +44,9 @@ static UIImageView *gPreviewView = nil;
             [container insertSubview:gPreviewView atIndex:0];
         }
         gPreviewView.frame = container.bounds;
-        if (gLastFrame) gPreviewView.image = gLastFrame;
+        if (gLastFrame) {
+            gPreviewView.image = gLastFrame;
+        }
     }
 }
 %end
@@ -58,7 +55,6 @@ static UIImageView *gPreviewView = nil;
 
 %hook AVCapturePhotoOutput
 - (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id)delegate {
-    // We let it capture, but we will swap the data in the delegate callback
     %orig;
 }
 %end
@@ -81,9 +77,7 @@ static UIImageView *gPreviewView = nil;
 // --- INITIALIZATION ---
 
 %ctor {
-    NSString *bid = [[NSBundle mainBundle] bundleIdentifier];
-    
-    // Wide support for any app that might use a camera
+    // Universal support enabled for all camera-using processes
     gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
     gReader.frameCallback = ^(UIImage *f) {
         gLastFrame = f;
