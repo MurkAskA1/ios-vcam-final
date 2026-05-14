@@ -6,7 +6,7 @@
 #import "MJPEGStreamReader.h"
 
 static BOOL enabled = YES;
-static NSString *streamURL = @"http://192.168.1.44:8887/live/stream";
+static NSString *streamURL = @"http://192.168.1.44:8888/live"; // PORT: 8888, PATH: /live
 
 static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
