@@ -8,22 +8,13 @@
 #import "MJPEGStreamReader.h"
 
 static BOOL enabled = YES;
-// Stream URL from your browser screenshot (port 8889)
-static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
+static NSString *streamURL = @"http://192.168.1.44:8887/live/stream";
 
 static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
 static UIImageView *gPreviewView = nil;
 
-static void VCamDebug(NSString *format, ...) {
-    va_list args;
-    va_start(args, format);
-    NSString *msg = [[NSString alloc] initWithFormat:format arguments:args];
-    va_end(args);
-    NSString *line = [NSString stringWithFormat:@"[VCamPro] %@ | Time: %@\n", msg, [NSDate date]];
-    NSLog(@"%@", line);
-}
-
+// 1. Force ATS Bypass for all processes
 %hook NSBundle
 - (NSDictionary *)infoDictionary {
     NSMutableDictionary *dict = [%orig mutableCopy];
@@ -34,26 +25,31 @@ static void VCamDebug(NSString *format, ...) {
 }
 %end
 
+// 2. Optimized Visual Engine: Direct UIImageView instead of WKWebView
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (!enabled) return;
+    
     self.opacity = 0.0;
+    
     UIView *container = (UIView *)self.delegate;
     if ([container isKindOfClass:[UIView class]]) {
         if (!gPreviewView) {
             gPreviewView = [[UIImageView alloc] initWithFrame:container.bounds];
             gPreviewView.contentMode = UIViewContentModeScaleAspectFill;
             gPreviewView.backgroundColor = [UIColor blackColor];
-            gPreviewView.tag = 8888;
             [container insertSubview:gPreviewView atIndex:0];
         }
         gPreviewView.frame = container.bounds;
-        if (gLastFrame) gPreviewView.image = gLastFrame;
+        if (gLastFrame) {
+            gPreviewView.image = gLastFrame;
+        }
     }
 }
 %end
 
+// 3. Absolute Photo Hijack (Gallery & KYC)
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
     if (enabled && gLastFrame) {
@@ -69,6 +65,7 @@ static void VCamDebug(NSString *format, ...) {
 }
 %end
 
+// 4. Hook AVCaptureSession for total control
 %hook AVCaptureSession
 - (void)startRunning {
     %orig;
@@ -77,11 +74,13 @@ static void VCamDebug(NSString *format, ...) {
 
 %ctor {
     NSString *bid = [NSBundle mainBundle].bundleIdentifier;
+    
     if ([bid containsString:@"camera"] || [bid containsString:@"telegra"] || 
         [bid containsString:@"safari"] || [bid containsString:@"chrome"] || 
         [bid containsString:@"WebKit"] || [bid containsString:@"facetime"] ||
-        [bid containsString:@"whatsapp"] || [bid containsString:@"instagram"] || 
-        [bid containsString:@"tiktok"] || [bid containsString:@"snapchat"]) {
+        [bid containsString:@"whatsapp"] || [bid containsString:@"telegram"] ||
+        [bid containsString:@"instagram"] || [bid containsString:@"tiktok"] ||
+        [bid containsString:@"snapchat"]) {
         
         gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
         gReader.frameCallback = ^(UIImage *f) {
