@@ -1,21 +1,21 @@
 @echo off
-REM ========================================
+REM ======================================
 REM Virtual Camera Pro - Stream Starter
 REM Converts OBS RTMP to HTTP for iPhone
-REM ========================================
+REM ======================================
 
 echo.
-echo ========================================
+echo ======================================
 echo Virtual Camera Pro - Stream Server
-echo ========================================
+echo ======================================
 echo.
 echo Starting RTMP to HTTP converter...
 echo.
 echo OBS Stream: rtmp://localhost:1935/live/stream
-echo HTTP Stream: http://0.0.0.0:8888/live
+echo HTTP Stream: http://localhost:8888/live
 echo.
-echo iPhone should connect to:
-echo http://192.168.1.44:8888/live
+echo iPhone should connect to your local IP address.
+echo Example: http://192.168.1.XX:8888/live
 echo.
 echo Press CTRL+C to stop streaming
 echo.
@@ -35,11 +35,12 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-REM Start streaming
+REM Start streaming with -listen flag to act as a server
 ffmpeg -i rtmp://localhost:1935/live/stream ^
     -vcodec mjpeg ^
     -q:v 5 ^
     -f mpjpeg ^
+    -listen 1 ^
     http://0.0.0.0:8888/live
 
 pause
