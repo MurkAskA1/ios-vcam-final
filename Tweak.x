@@ -5,36 +5,47 @@
 #import "MJPEGStreamReader.h"
 
 static BOOL enabled = YES;
-static NSString *streamURL = @"http://192.168.1.44:8888/live";
+// ОБНОВИЛ ПУТЬ: добавил /stream и порт 8889 (стандарт MediaMTX для MJPEG)
+static NSString *streamURL = @"http://192.168.1.44:8889/live/stream";
 
 static MJPEGStreamReader *gReader = nil;
 static UIImage *gLastFrame = nil;
 static UIImageView *gPreviewView = nil;
-
-// UI Labels for Debugging
+static UIView *gDebugPanel = nil;
 static UILabel *gStatusLabel = nil;
-static UILabel *gUrlLabel = nil;
-static UILabel *gStatsLabel = nil;
-static UILabel *gErrorDetailLabel = nil;
+static UILabel *gErrorLabel = nil;
 
-// Logging helper
-#define VLog(fmt, ...) NSLog(@"[VCamTweak] " fmt, ##__VA_ARGS__)
+// Лог теперь пишем в доступное место
+#define LOG_PATH @"/var/mobile/Documents/vcam_debug.log"
 
+void VLog(NSString *format, ...) {
+    va_list args;
+    va_start(args, format);
+    NSString *msg = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
+    NSLog(@"[VCam] %@", msg);
+    
+    NSString *line = [NSString stringWithFormat:@"%@: %@\n", [NSDate date], msg];
+    NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:LOG_PATH];
+    if (!fh) {
+        [line writeToFile:LOG_PATH atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    } else {
+        [fh seekToEndOfFile];
+        [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+        [fh closeFile];
+    }
+}
+
+// --- Функция конвертации ---
 CMSampleBufferRef CreateSampleBufferFromImage(UIImage *image, CMTime timestamp) {
     if (!image) return NULL;
     CGImageRef cgImage = image.CGImage;
     CVPixelBufferRef pxbuffer = NULL;
-    size_t width = CGImageGetWidth(cgImage);
-    size_t height = CGImageGetHeight(cgImage);
     NSDictionary *options = @{(id)kCVPixelBufferCGImageCompatibilityKey: @YES, (id)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES};
-    CVReturn status = CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)options, &pxbuffer);
-    if (status != kCVReturnSuccess) return NULL;
+    CVPixelBufferCreate(kCFAllocatorDefault, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage), kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)options, &pxbuffer);
     CVPixelBufferLockBaseAddress(pxbuffer, 0);
-    void *pxdata = CVPixelBufferGetBaseAddress(pxbuffer);
-    CGColorSpaceRef rgbColorSpace = CGColorSpaceCreateDeviceRGB();
-    CGContextRef context = CGBitmapContextCreate(pxdata, width, height, 8, CVPixelBufferGetBytesPerRow(pxbuffer), rgbColorSpace, kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
-    CGContextDrawImage(context, CGRectMake(0, 0, width, height), cgImage);
-    CGColorSpaceRelease(rgbColorSpace);
+    CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(pxbuffer), CGImageGetWidth(cgImage), CGImageGetHeight(cgImage), 8, CVPixelBufferGetBytesPerRow(pxbuffer), CGColorSpaceCreateDeviceRGB(), kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+    CGContextDrawImage(context, CGRectMake(0, 0, CGImageGetWidth(cgImage), CGImageGetHeight(cgImage)), cgImage);
     CGContextRelease(context);
     CVPixelBufferUnlockBaseAddress(pxbuffer, 0);
     CMVideoFormatDescriptionRef formatDescription;
@@ -47,110 +58,84 @@ CMSampleBufferRef CreateSampleBufferFromImage(UIImage *image, CMTime timestamp) 
     return sampleBuffer;
 }
 
-void UpdateDebugUI() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (gStatsLabel && gReader) {
-            gStatsLabel.text = [NSString stringWithFormat:@"Frames: %lu | URL: %s", (unsigned long)gReader.frameCount, gReader.isConnecting ? "Connecting" : "Idle"];
-        }
-    });
-}
-
-// --- ХУК 1: Подмена превью на экране ---
+// --- ХУКИ ---
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (!enabled) return;
-    
     self.opacity = 0.0;
-    UIView *container = (UIView *)self.delegate;
     
-    if ([container isKindOfClass:[UIView class]]) {
-        if (!gPreviewView) {
-            VLog(@"Creating Debug UI on preview layer");
-            gPreviewView = [[UIImageView alloc] initWithFrame:container.bounds];
-            gPreviewView.contentMode = UIViewContentModeScaleAspectFill;
-            gPreviewView.backgroundColor = [UIColor blackColor];
-            [container insertSubview:gPreviewView atIndex:0];
-            
-            gStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 40, 200, 20)];
-            gStatusLabel.font = [UIFont boldSystemFontOfSize:12];
-            gStatusLabel.textColor = [UIColor yellowColor];
-            [container addSubview:gStatusLabel];
+    if (!gDebugPanel) {
+        UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+        gDebugPanel = [[UIView alloc] initWithFrame:CGRectMake(20, 50, 250, 100)];
+        gDebugPanel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+        gDebugPanel.layer.cornerRadius = 10;
+        gDebugPanel.userInteractionEnabled = NO;
+        
+        gStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 10, 230, 20)];
+        gStatusLabel.textColor = [UIColor yellowColor];
+        gStatusLabel.font = [UIFont boldSystemFontOfSize:12];
+        gStatusLabel.text = @"Connecting to MediaMTX...";
+        [gDebugPanel addSubview:gStatusLabel];
+        
+        UILabel *urlLbl = [[UILabel alloc] initWithFrame:CGRectMake(10, 35, 230, 15)];
+        urlLbl.textColor = [UIColor whiteColor];
+        urlLbl.font = [UIFont systemFontOfSize:10];
+        urlLbl.text = streamURL;
+        [gDebugPanel addSubview:urlLbl];
 
-            gUrlLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 60, container.bounds.size.width - 20, 20)];
-            gUrlLabel.font = [UIFont systemFontOfSize:10];
-            gUrlLabel.textColor = [UIColor whiteColor];
-            gUrlLabel.text = [NSString stringWithFormat:@"URL: %@", streamURL];
-            [container addSubview:gUrlLabel];
-
-            gStatsLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 80, 200, 20)];
-            gStatsLabel.font = [UIFont systemFontOfSize:10];
-            gStatsLabel.textColor = [UIColor cyanColor];
-            [container addSubview:gStatsLabel];
-
-            gErrorDetailLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 100, container.bounds.size.width - 20, 40)];
-            gErrorDetailLabel.font = [UIFont systemFontOfSize:10];
-            gErrorDetailLabel.textColor = [UIColor redColor];
-            gErrorDetailLabel.numberOfLines = 2;
-            [container addSubview:gErrorDetailLabel];
-        }
-        gPreviewView.frame = container.bounds;
-        if (gLastFrame) gPreviewView.image = gLastFrame;
+        gErrorLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 55, 230, 40)];
+        gErrorLabel.textColor = [UIColor redColor];
+        gErrorLabel.font = [UIFont systemFontOfSize:10];
+        gErrorLabel.numberOfLines = 2;
+        [gDebugPanel addSubview:gErrorLabel];
+        
+        [keyWindow addSubview:gDebugPanel];
+        
+        gPreviewView = [[UIImageView alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        gPreviewView.contentMode = UIViewContentModeScaleAspectFill;
+        gPreviewView.backgroundColor = [UIColor blackColor];
+        [keyWindow insertSubview:gPreviewView belowSubview:gDebugPanel];
     }
 }
 %end
 
-// --- ХУК 2: Подмена ФОТО ---
 %hook AVCapturePhoto
 - (NSData *)fileDataRepresentation {
-    if (enabled && gLastFrame) {
-        VLog(@"Injecting frame into photo representation");
-        return UIImageJPEGRepresentation(gLastFrame, 0.95);
-    }
+    if (enabled && gLastFrame) return UIImageJPEGRepresentation(gLastFrame, 0.9);
     return %orig;
 }
 %end
 
-// --- ХУК 3: ГЛУБОКАЯ ПОДМЕНА ---
 %hook NSObject
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
     if (enabled && gLastFrame) {
-        CMTime timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
-        CMSampleBufferRef fakeBuffer = CreateSampleBufferFromImage(gLastFrame, timestamp);
-        if (fakeBuffer) {
-            %orig(output, fakeBuffer, connection);
-            CFRelease(fakeBuffer);
-            return;
-        }
+        CMSampleBufferRef fake = CreateSampleBufferFromImage(gLastFrame, CMSampleBufferGetPresentationTimeStamp(sampleBuffer));
+        if (fake) { %orig(output, fake, connection); CFRelease(fake); return; }
     }
     %orig;
 }
 %end
 
 %ctor {
-    VLog(@"Tweak loading... Connecting to %@", streamURL);
+    VLog(@"Tweak started. Target: %@", streamURL);
     gReader = [[MJPEGStreamReader alloc] initWithURL:[NSURL URLWithString:streamURL]];
-    
     gReader.frameCallback = ^(UIImage *f) {
         gLastFrame = f;
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (gStatusLabel) gStatusLabel.text = @"● LIVE";
-            if (gStatusLabel) gStatusLabel.textColor = [UIColor greenColor];
-            if (gPreviewView) gPreviewView.image = f;
-            if (gErrorDetailLabel) gErrorDetailLabel.text = @"";
-            UpdateDebugUI();
+            gStatusLabel.text = @"● LIVE (Receiving Frames)";
+            gStatusLabel.textColor = [UIColor greenColor];
+            gPreviewView.image = f;
+            gErrorLabel.text = @"";
         });
     };
-    
-    gReader.errorCallback = ^(NSError *error) {
-        VLog(@"Stream Error: %@", error.localizedDescription);
+    gReader.errorCallback = ^(NSError *err) {
+        VLog(@"Stream Error: %@", err.localizedDescription);
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (gStatusLabel) gStatusLabel.text = @"● ERROR";
-            if (gStatusLabel) gStatusLabel.textColor = [UIColor redColor];
-            if (gErrorDetailLabel) gErrorDetailLabel.text = error.localizedDescription;
-            UpdateDebugUI();
+            gStatusLabel.text = @"● STREAM ERROR";
+            gStatusLabel.textColor = [UIColor redColor];
+            gErrorLabel.text = err.localizedDescription;
         });
     };
-    
     [gReader startStreaming];
 }
