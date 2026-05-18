@@ -41,7 +41,6 @@ static void RefreshBuffer() {
     if (enabled) {
         RefreshBuffer();
         if (gGlobalBuffer) {
-            CMSampleBufferRef fake = NULL;
             CMVideoFormatDescriptionRef fd;
             CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, &fd);
             CMSampleTimingInfo ti = { kCMTimeInvalid, CMSampleBufferGetPresentationTimeStamp(sb), kCMTimeInvalid };
@@ -78,7 +77,7 @@ static void RefreshBuffer() {
         NSTimer *t = [NSTimer scheduledTimerWithTimeInterval:1.0/30.0 repeats:YES block:^(NSTimer *timer) { RefreshBuffer(); }];
         [[NSRunLoop mainRunLoop] addTimer:t forMode:NSRunLoopCommonModes];
     }
-    // Ensure the player layer frame is always updated
+    
     for (CALayer *sub in self.superlayer.sublayers) {
         if ([sub isKindOfClass:[AVPlayerLayer class]]) {
             sub.frame = self.bounds;
