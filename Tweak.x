@@ -8,7 +8,7 @@ static NSString *streamURL = @"http://192.168.1.44:8888/live/stream/index.m3u8";
 
 static AVPlayer *gPlayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
-static __block CVPixelBufferRef gGlobalBuffer = NULL;
+static CVPixelBufferRef gGlobalBuffer = NULL;
 static dispatch_queue_t gBufferQueue;
 
 static void RefreshBuffer() {
