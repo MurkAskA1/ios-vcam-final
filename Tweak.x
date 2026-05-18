@@ -9,24 +9,20 @@ static AVPlayer *gPlayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
 static CVPixelBufferRef gGlobalBuffer = NULL;
 
-#define LOG_PATH @"/var/mobile/vcam_debug.log"
+#define LOG_PATH @"/var/mobile/Documents/vcam_debug.log"
 
-void VLog(NSString *format, ...) {
-    va_list args;
-    va_start(args, format);
-    NSString *msg = [[NSString alloc] initWithFormat:format arguments:args];
-    va_end(args);
-    NSLog(@"[VCam] %@", msg);
-    
-    NSString *line = [NSString stringWithFormat:@"%@: %@\n", [NSDate date], msg];
-    NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:LOG_PATH];
-    if (!fh) {
-        [line writeToFile:LOG_PATH atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    } else {
-        [fh seekToEndOfFile];
-        [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
-        [fh closeFile];
-    }
+void VLog(NSString *msg) {
+    @try {
+        NSString *line = [NSString stringWithFormat:@"%@: [VCam] %@\n", [NSDate date], msg];
+        NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:LOG_PATH];
+        if (!fh) {
+            [line writeToFile:LOG_PATH atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        } else {
+            [fh seekToEndOfFile];
+            [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+            [fh closeFile];
+        }
+    } @catch (NSException *e) {}
 }
 
 static void SyncFrame() {
@@ -39,63 +35,46 @@ static void SyncFrame() {
     }
 }
 
-// --- ХУК: Подмена ВИДЕОПОТОКА --- 
+%hook AVCapturePhoto
+- (CVPixelBufferRef)pixelBuffer {
+    SyncFrame();
+    if (enabled && gGlobalBuffer) {
+        VLog(@"HOOK: Providing fake pixelBuffer to App");
+        return CVPixelBufferRetain(gGlobalBuffer);
+    }
+    return %orig;
+}
+- (NSData *)fileDataRepresentation {
+    SyncFrame();
+    if (enabled && gGlobalBuffer) {
+        VLog(@"HOOK: Providing fake JPEG data");
+        CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
+        CIContext *ctx = [CIContext contextWithOptions:nil];
+        CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
+        NSData *data = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.9);
+        if (cg) CGImageRelease(cg);
+        return data;
+    }
+    return %orig;
+}
+%end
+
 %hook NSObject
-- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
+- (void)captureOutput:(id)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(id)connection {
     if (enabled) {
         SyncFrame();
         if (gGlobalBuffer) {
+            CMSampleBufferRef fake = NULL;
             CMVideoFormatDescriptionRef fd;
             CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, &fd);
             CMSampleTimingInfo ti = { kCMTimeInvalid, CMSampleBufferGetPresentationTimeStamp(sampleBuffer), kCMTimeInvalid };
-            CMSampleBufferRef fake;
             CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, gGlobalBuffer, YES, NULL, NULL, fd, &ti, &fake);
-            
             %orig(output, fake, connection);
-            
-            VLog(@"Buffer swapped in captureOutput");
             if (fake) CFRelease(fake);
             if (fd) CFRelease(fd);
             return;
         }
     }
-    %orig;
-}
-%end
-
-// --- ХУК: Подмена ФОТО --- 
-%hook AVCapturePhoto
-- (CVPixelBufferRef)pixelBuffer {
-    VLog(@"App requested pixelBuffer from photo");
-    SyncFrame();
-    if (enabled && gGlobalBuffer) {
-        VLog(@"Successfully providing faked pixelBuffer");
-        return CVPixelBufferRetain(gGlobalBuffer);
-    }
-    VLog(@"Failing to provide fake pixelBuffer - Buffer is NULL");
-    return %orig;
-}
-
-- (NSData *)fileDataRepresentation {
-    VLog(@"App requested fileDataRepresentation from photo");
-    SyncFrame();
-    if (enabled && gGlobalBuffer) {
-        CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
-        CIContext *ctx = [CIContext contextWithOptions:nil];
-        CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
-        NSData *data = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.95);
-        if (cg) CGImageRelease(cg);
-        VLog(@"Successfully providing faked JPEG data");
-        return data;
-    }
-    VLog(@"Failing to provide fake JPEG - Buffer is NULL");
-    return %orig;
-}
-%end
-
-%hook AVCapturePhotoOutput
-- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id)delegate {
-    VLog(@"capturePhotoWithSettings called. Delegate: %@", delegate);
     %orig;
 }
 %end
@@ -107,7 +86,7 @@ static void SyncFrame() {
     self.hidden = YES;
 
     if (!gPlayer) {
-        VLog(@"Initializing Player in layoutSublayers");
+        VLog(@"GodMode Player Init");
         gPlayer = [[AVPlayer alloc] initWithURL:[NSURL URLWithString:streamURL]];
         NSDictionary *attrs = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
         gVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:attrs];
@@ -119,10 +98,9 @@ static void SyncFrame() {
         pl.videoGravity = AVLayerVideoGravityResizeAspectFill;
         [self.superlayer insertSublayer:pl above:self];
     }
-    VLog(@"Preview layer updated");
 }
 %end
 
 %ctor {
-    VLog(@"VCam Tweak Loaded. Process: %@", [[NSProcessInfo processInfo] processName]);
+    VLog([NSString stringWithFormat:@"Loaded in %@", [[NSProcessInfo processInfo] processName]]);
 }
