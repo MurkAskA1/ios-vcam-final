@@ -22,60 +22,43 @@ static void RefreshBuffer() {
     }
 }
 
+@interface VCamPhotoDelegate : NSObject <AVCapturePhotoCaptureDelegate>
+@property (nonatomic, strong) id originalDelegate;
+@end
+
+@implementation VCamPhotoDelegate
+- (void)captureOutput:(AVCapturePhotoOutput *)output didFinishProcessingPhoto:(AVCapturePhoto *)photo error:(NSError *)error {
+    if ([self.originalDelegate respondsToSelector:@selector(captureOutput:didFinishProcessingPhoto:error:)]) {
+        [self.originalDelegate captureOutput:output didFinishProcessingPhoto:photo error:error];
+    }
+}
+@end
+
+%hook AVCapturePhotoOutput
+- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
+    if (enabled && delegate) {
+        VCamPhotoDelegate *proxy = [[VCamPhotoDelegate alloc] init];
+        proxy.originalDelegate = delegate;
+        %orig(settings, proxy);
+        return;
+    }
+    %orig;
+}
+%end
+
 %hook AVCapturePhoto
 - (CVPixelBufferRef)pixelBuffer {
     RefreshBuffer();
-    if (enabled && gGlobalBuffer) return CVPixelBufferRetain(gGlobalBuffer);
-    return %orig;
+    return (enabled && gGlobalBuffer) ? CVPixelBufferRetain(gGlobalBuffer) : %orig;
 }
-
-- (CVPixelBufferRef)previewPixelBuffer {
-    RefreshBuffer();
-    if (enabled && gGlobalBuffer) return CVPixelBufferRetain(gGlobalBuffer);
-    return %orig;
-}
-
 - (NSData *)fileDataRepresentation {
     RefreshBuffer();
     if (enabled && gGlobalBuffer) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
-        CIContext *ctx = [CIContext contextWithOptions:nil];
-        CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
-        NSData *data = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.95);
-        if (cg) CGImageRelease(cg);
-        return data;
+        UIImage *ui = [UIImage imageWithCIImage:ci];
+        return UIImageJPEGRepresentation(ui, 0.9);
     }
     return %orig;
-}
-
-- (CGImageRef)CGImageRepresentation {
-    RefreshBuffer();
-    if (enabled && gGlobalBuffer) {
-        CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
-        CIContext *ctx = [CIContext contextWithOptions:nil];
-        return [ctx createCGImage:ci fromRect:ci.extent];
-    }
-    return %orig;
-}
-%end
-
-%hook NSObject
-- (void)captureOutput:(id)output didOutputSampleBuffer:(CMSampleBufferRef)sb fromConnection:(id)conn {
-    if (enabled) {
-        RefreshBuffer();
-        if (gGlobalBuffer) {
-            CMVideoFormatDescriptionRef fd;
-            CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, &fd);
-            CMSampleTimingInfo ti = { kCMTimeInvalid, CMSampleBufferGetPresentationTimeStamp(sb), kCMTimeInvalid };
-            CMSampleBufferRef fakeBuffer = NULL;
-            CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, gGlobalBuffer, YES, NULL, NULL, fd, &ti, &fakeBuffer);
-            %orig(output, fakeBuffer, conn);
-            if (fakeBuffer) CFRelease(fakeBuffer);
-            if (fd) CFRelease(fd);
-            return;
-        }
-    }
-    %orig;
 }
 %end
 
@@ -98,11 +81,8 @@ static void RefreshBuffer() {
 
         [NSTimer scheduledTimerWithTimeInterval:0.01 repeats:YES block:^(NSTimer *t) { RefreshBuffer(); }];
     }
-    
     for (CALayer *sub in self.superlayer.sublayers) {
-        if ([sub isKindOfClass:[AVPlayerLayer class]]) {
-            sub.frame = self.bounds;
-        }
+        if ([sub isKindOfClass:[AVPlayerLayer class]]) sub.frame = self.bounds;
     }
 }
 %end
