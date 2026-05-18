@@ -20,7 +20,7 @@ void VLog(NSString *msg) {
     } @catch (NSException *e) {}
 }
 
-static void SyncFrame() {
+static void RefreshBuffer() {
     if (!gVideoOutput) return;
     CMTime vTime = [gPlayer.currentItem currentTime];
     if ([gVideoOutput hasNewPixelBufferForItemTime:vTime]) {
@@ -32,10 +32,17 @@ static void SyncFrame() {
     }
 }
 
+%hook AVCaptureConnection
+- (BOOL)isVideoMirroringSupported {
+    RefreshBuffer();
+    return %orig;
+}
+%end
+
 %hook NSObject
 - (void)captureOutput:(id)output didOutputSampleBuffer:(CMSampleBufferRef)sb fromConnection:(id)conn {
     if (enabled) {
-        SyncFrame();
+        RefreshBuffer();
         if (gGlobalBuffer) {
             CMSampleBufferRef fake = NULL;
             CMVideoFormatDescriptionRef fd;
@@ -54,21 +61,32 @@ static void SyncFrame() {
 
 %hook AVCapturePhoto
 - (CVPixelBufferRef)pixelBuffer {
+    RefreshBuffer();
     if (enabled && gGlobalBuffer) {
-        VLog(@"SUCCESS: Swapping PixelBuffer");
+        VLog(@"FORCE: Swapping PixelBuffer");
         return CVPixelBufferRetain(gGlobalBuffer);
     }
     return %orig;
 }
 - (NSData *)fileDataRepresentation {
+    RefreshBuffer();
     if (enabled && gGlobalBuffer) {
-        VLog(@"SUCCESS: Swapping JPEG");
+        VLog(@"FORCE: Swapping JPEG");
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
         CIContext *ctx = [CIContext contextWithOptions:nil];
         CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
-        NSData *data = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.95);
-        if (cg) CGImageRelease(cg);
+        NSData *data = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.9);
+        CGImageRelease(cg); 
         return data;
+    }
+    return %orig;
+}
+- (CGImageRef)CGImageRepresentation {
+    RefreshBuffer();
+    if (enabled && gGlobalBuffer) {
+        CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
+        CIContext *ctx = [CIContext contextWithOptions:nil];
+        return [ctx createCGImage:ci fromRect:ci.extent];
     }
     return %orig;
 }
@@ -81,7 +99,7 @@ static void SyncFrame() {
     self.hidden = YES;
 
     if (!gPlayer) {
-        VLog(@"Total Hijack Player Init");
+        VLog(@"Atomic Swap Player Init");
         gPlayer = [[AVPlayer alloc] initWithURL:[NSURL URLWithString:streamURL]];
         NSDictionary *attrs = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
         gVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:attrs];
@@ -92,10 +110,7 @@ static void SyncFrame() {
         pl.frame = self.bounds;
         pl.videoGravity = AVLayerVideoGravityResizeAspectFill;
         [self.superlayer insertSublayer:pl above:self];
-
-        // Форсируем обновление через таймер (DisplayLink может вылетать)
-        NSTimer *t = [NSTimer scheduledTimerWithTimeInterval:1.0/30.0 repeats:YES block:^(NSTimer * _Nonnull timer) { SyncFrame(); }];
-        [[NSRunLoop mainRunLoop] addTimer:t forMode:NSRunLoopCommonModes];
     }
+    if (gPlayer) [gPlayer play];
 }
 %end
