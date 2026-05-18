@@ -9,36 +9,39 @@ static NSString *streamURL = @"http://192.168.1.44:8888/live/stream/index.m3u8";
 static AVPlayer *gPlayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
 static CVPixelBufferRef gGlobalBuffer = NULL;
+static dispatch_semaphore_t gLock;
 
-static void SyncFrame() {
+static void RefreshBuffer() {
     if (!gVideoOutput || !enabled) return;
+    
+    dispatch_semaphore_wait(gLock, DISPATCH_TIME_FOREVER);
     CMTime vTime = [gPlayer.currentItem currentTime];
-    CVPixelBufferRef pb = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
-    if (pb) {
-        if (gGlobalBuffer) CVPixelBufferRelease(gGlobalBuffer);
-        gGlobalBuffer = pb; 
+    if ([gVideoOutput hasNewPixelBufferForItemTime:vTime]) {
+        CVPixelBufferRef pb = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
+        if (pb) {
+            if (gGlobalBuffer) CVPixelBufferRelease(gGlobalBuffer);
+            gGlobalBuffer = pb; 
+        }
     }
+    dispatch_semaphore_signal(gLock);
 }
 
 // --- GALLERY HIJACK ---
 %hook PHAssetCreationRequest
 + (instancetype)creationRequestForAssetFromImage:(UIImage *)image {
-    SyncFrame();
     if (enabled && gGlobalBuffer) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
-        UIImage *fake = [UIImage imageWithCIImage:ci];
-        return %orig(fake);
+        return %orig([UIImage imageWithCIImage:ci]);
     }
     return %orig;
 }
 
 + (instancetype)creationRequestForAssetFromImageData:(NSData *)imageData {
-    SyncFrame();
     if (enabled && gGlobalBuffer) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
         CIContext *ctx = [CIContext contextWithOptions:nil];
         CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
-        NSData *fakeData = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.9);
+        NSData *fakeData = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.95);
         CGImageRelease(cg);
         return %orig(fakeData);
     }
@@ -49,17 +52,17 @@ static void SyncFrame() {
 // --- CAPTURE HIJACK ---
 %hook AVCapturePhoto
 - (CVPixelBufferRef)pixelBuffer {
-    SyncFrame();
     return (enabled && gGlobalBuffer) ? CVPixelBufferRetain(gGlobalBuffer) : %orig;
 }
-
+- (CVPixelBufferRef)previewPixelBuffer {
+    return (enabled && gGlobalBuffer) ? CVPixelBufferRetain(gGlobalBuffer) : %orig;
+}
 - (NSData *)fileDataRepresentation {
-    SyncFrame();
     if (enabled && gGlobalBuffer) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
         CIContext *ctx = [CIContext contextWithOptions:nil];
         CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
-        NSData *data = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.9);
+        NSData *data = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.95);
         CGImageRelease(cg);
         return data;
     }
@@ -75,6 +78,7 @@ static void SyncFrame() {
     self.hidden = YES;
 
     if (!gPlayer) {
+        gLock = dispatch_semaphore_create(1);
         gPlayer = [[AVPlayer alloc] initWithURL:[NSURL URLWithString:streamURL]];
         gVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
         [gPlayer.currentItem addOutput:gVideoOutput];
@@ -85,7 +89,7 @@ static void SyncFrame() {
         pl.videoGravity = AVLayerVideoGravityResizeAspectFill;
         [self.superlayer insertSublayer:pl above:self];
 
-        [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(NSTimer *t) { SyncFrame(); }];
+        [NSTimer scheduledTimerWithTimeInterval:0.02 repeats:YES block:^(NSTimer *t) { RefreshBuffer(); }];
     }
-}
+} 
 %end
