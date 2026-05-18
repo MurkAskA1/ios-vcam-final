@@ -9,37 +9,41 @@ static AVPlayer *gPlayer = nil;
 static AVPlayerLayer *gPlayerLayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
 
-static CMSampleBufferRef CreateSampleBufferFromPixelBuffer(CVPixelBufferRef pixelBuffer, CMTime timestamp) {
-    if (!pixelBuffer) return NULL;
-    CMVideoFormatDescriptionRef formatDescription;
-    CMVideoFormatDescriptionCreateForImageBuffer(NULL, pixelBuffer, &formatDescription);
-    CMSampleTimingInfo timingInfo = { kCMTimeInvalid, timestamp, kCMTimeInvalid };
-    CMSampleBufferRef sampleBuffer = NULL;
-    CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer, YES, NULL, NULL, formatDescription, &timingInfo, &sampleBuffer);
-    CFRelease(formatDescription);
-    return sampleBuffer;
+static UIImage* GetCurrentFrame() {
+    if (!gVideoOutput) return nil;
+    CMTime vTime = [gPlayer.currentItem currentTime];
+    if (![gVideoOutput hasNewPixelBufferForItemTime:vTime]) return nil;
+    
+    CVPixelBufferRef pixelBuffer = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
+    if (!pixelBuffer) return nil;
+    
+    CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixelBuffer];
+    CIContext *context = [CIContext contextWithOptions:nil];
+    CGImageRef cgImage = [context createCGImage:ciImage fromRect:ciImage.extent];
+    UIImage *uiImage = [UIImage imageWithCGImage:cgImage];
+    
+    CGImageRelease(cgImage);
+    CVPixelBufferRelease(pixelBuffer);
+    return uiImage;
 }
 
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (!enabled) return;
-
-    self.opacity = 0.0; 
+    self.opacity = 0.0;
 
     if (!gPlayer) {
         gPlayer = [[AVPlayer alloc] initWithURL:[NSURL URLWithString:streamURL]];
-        gPlayerLayer = [AVPlayerLayer playerLayerWithPlayer:gPlayer];
-        gPlayerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-        
         NSDictionary *pixBuffAttributes = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
         gVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:pixBuffAttributes];
         [gPlayer.currentItem addOutput:gVideoOutput];
-
+        
+        gPlayerLayer = [AVPlayerLayer playerLayerWithPlayer:gPlayer];
+        gPlayerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
         [gPlayer play];
     }
 
-    // Привязываем кадр строго к границам оригинального слоя
     gPlayerLayer.frame = self.bounds;
     if (gPlayerLayer.superlayer == nil && self.superlayer != nil) {
         [self.superlayer insertSublayer:gPlayerLayer above:self];
@@ -47,23 +51,28 @@ static CMSampleBufferRef CreateSampleBufferFromPixelBuffer(CVPixelBufferRef pixe
 }
 %end
 
-// --- Глубокая подмена данных для приложений ---
-%hook NSObject
-- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
-    if (enabled && gVideoOutput) {
-        CMTime vTime = [gPlayer.currentItem currentTime];
-        CVPixelBufferRef pixelBuffer = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
-        if (pixelBuffer) {
-            CMSampleBufferRef fakeBuffer = CreateSampleBufferFromPixelBuffer(pixelBuffer, CMSampleBufferGetPresentationTimeStamp(sampleBuffer));
-            if (fakeBuffer) {
-                %orig(output, fakeBuffer, connection);
-                CFRelease(fakeBuffer);
-                CVPixelBufferRelease(pixelBuffer);
-                return;
-            }
-            CVPixelBufferRelease(pixelBuffer);
-        }
+%hook AVCapturePhoto
+- (NSData *)fileDataRepresentation {
+    if (enabled) {
+        UIImage *frame = GetCurrentFrame();
+        if (frame) return UIImageJPEGRepresentation(frame, 0.9);
     }
-    %orig;
+    return %orig;
+}
+
+- (CGImageRef)previewCGImageRepresentation {
+    if (enabled) {
+        UIImage *frame = GetCurrentFrame();
+        if (frame) return frame.CGImage;
+    }
+    return %orig;
+}
+
+- (CGImageRef)CGImageRepresentation {
+    if (enabled) {
+        UIImage *frame = GetCurrentFrame();
+        if (frame) return frame.CGImage;
+    }
+    return %orig;
 }
 %end
