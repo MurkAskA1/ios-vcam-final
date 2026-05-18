@@ -26,8 +26,8 @@ static void ForceSync() {
         ForceSync();
         if (gGlobalBuffer) {
             CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
-            UIImage *fake = [UIImage imageWithCIImage:ci];
-            return %orig(fake);
+            UIImage *fakeImg = [UIImage imageWithCIImage:ci];
+            return %orig(fakeImg);
         }
     }
     return %orig;
@@ -47,7 +47,7 @@ static void ForceSync() {
         CIContext *ctx = [CIContext contextWithOptions:nil];
         CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
         NSData *data = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.9);
-        CGImageRelease(cg);
+        if (cg) CGImageRelease(cg);
         return data;
     }
     return %orig;
@@ -59,7 +59,6 @@ static void ForceSync() {
     if (enabled) {
         ForceSync();
         if (gGlobalBuffer) {
-            CMSampleBufferRef fake = NULL;
             CMVideoFormatDescriptionRef fd;
             CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, &fd);
             CMSampleTimingInfo ti = { kCMTimeInvalid, CMSampleBufferGetPresentationTimeStamp(sb), kCMTimeInvalid };
