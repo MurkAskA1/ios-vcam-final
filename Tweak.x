@@ -6,24 +6,9 @@ static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8888/live/stream/index.m3u8";
 
 static AVPlayer *gPlayer = nil;
+static AVPlayerLayer *gPlayerLayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
 static UILabel *gStatusLabel = nil;
-
-// Лог файл для Filza
-#define DEBUG_LOG @"/var/mobile/vcam.log"
-
-void WriteLog(NSString *msg) {
-    NSLog(@"[VCam] %@", msg);
-    NSString *content = [NSString stringWithFormat:@"%@: %@\n", [NSDate date], msg];
-    NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:DEBUG_LOG];
-    if (!handle) {
-        [content writeToFile:DEBUG_LOG atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    } else {
-        [handle seekToEndOfFile];
-        [handle writeData:[content dataUsingEncoding:NSUTF8StringEncoding]];
-        [handle closeFile];
-    }
-}
 
 static CMSampleBufferRef CreateSampleBufferFromPixelBuffer(CVPixelBufferRef pixelBuffer, CMTime timestamp) {
     if (!pixelBuffer) return NULL;
@@ -40,36 +25,34 @@ static CMSampleBufferRef CreateSampleBufferFromPixelBuffer(CVPixelBufferRef pixe
 - (void)layoutSublayers {
     %orig;
     if (!enabled) return;
+
     self.opacity = 0.0;
 
-    if (!gPlayer) {
-        WriteLog(@"Initializing Player...");
-        
-        UIWindow *win = [UIApplication sharedApplication].keyWindow;
-        if (!win) win = [[UIApplication sharedApplication].windows firstObject];
-
-        if (win) {
-            gStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 100, win.bounds.size.width - 40, 100)];
-            gStatusLabel.textColor = [UIColor yellowColor];
-            gStatusLabel.numberOfLines = 0;
-            gStatusLabel.textAlignment = NSTextAlignmentCenter;
-            gStatusLabel.text = @"VCam: Loading Stream...";
-            [win addSubview:gStatusLabel];
+    // Используем delegate (контейнер слоя), чтобы не перекрывать весь экран
+    UIView *container = (UIView *)self.delegate;
+    if ([container isKindOfClass:[UIView class]]) {
+        if (!gPlayer) {
+            gPlayer = [[AVPlayer alloc] initWithURL:[NSURL URLWithString:streamURL]];
+            gPlayerLayer = [AVPlayerLayer playerLayerWithPlayer:gPlayer];
+            gPlayerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
             
-            NSURL *url = [NSURL URLWithString:streamURL];
-            gPlayer = [AVPlayer playerWithURL:url];
-            
+            // Создаем выход для захвата кадров (системная подмена)
             NSDictionary *pixBuffAttributes = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
             gVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:pixBuffAttributes];
             [gPlayer.currentItem addOutput:gVideoOutput];
-            
-            AVPlayerLayer *pl = [AVPlayerLayer playerLayerWithPlayer:gPlayer];
-            pl.frame = win.bounds;
-            pl.videoGravity = AVLayerVideoGravityResizeAspectFill;
-            [win.layer insertSublayer:pl below:gStatusLabel.layer];
+
+            gStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 40, 200, 30)];
+            gStatusLabel.textColor = [UIColor yellowColor];
+            gStatusLabel.font = [UIFont boldSystemFontOfSize:12];
+            gStatusLabel.text = @"VCam: Loading Stream...";
+            [container addSubview:gStatusLabel];
             
             [gPlayer play];
-            WriteLog(@"Player started playing");
+        }
+        
+        gPlayerLayer.frame = container.bounds;
+        if (gPlayerLayer.superlayer != container.layer) {
+            [container.layer insertSublayer:gPlayerLayer atIndex:0];
         }
     }
 }
