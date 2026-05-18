@@ -10,88 +10,80 @@ static AVPlayerLayer *gPlayerLayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
 static CVPixelBufferRef gGlobalBuffer = NULL;
 
-// Функция синхронизации кадра
-static void SyncFrame() {
+static void UpdateGlobalBuffer() {
     if (!gVideoOutput) return;
     CMTime vTime = [gPlayer.currentItem currentTime];
     if ([gVideoOutput hasNewPixelBufferForItemTime:vTime]) {
         CVPixelBufferRef pb = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
         if (pb) {
             if (gGlobalBuffer) CVPixelBufferRelease(gGlobalBuffer);
-            gGlobalBuffer = pb; // copyPixelBuffer уже дает +1 к retain count
+            gGlobalBuffer = pb;
         }
     }
 }
 
-// Функция создания буфера для системы
-static CMSampleBufferRef CreateSampleBufferFromPixelBuffer(CVPixelBufferRef pixelBuffer, CMTime timestamp) {
-    if (!pixelBuffer) return NULL;
-    CMVideoFormatDescriptionRef formatDescription;
-    CMVideoFormatDescriptionCreateForImageBuffer(NULL, pixelBuffer, &formatDescription);
-    CMSampleTimingInfo timingInfo = { kCMTimeInvalid, timestamp, kCMTimeInvalid };
-    CMSampleBufferRef sampleBuffer = NULL;
-    CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer, YES, NULL, NULL, formatDescription, &timingInfo, &sampleBuffer);
-    CFRelease(formatDescription);
-    return sampleBuffer;
+static CMSampleBufferRef CreateFakeSampleBuffer(CMSampleBufferRef original) {
+    UpdateGlobalBuffer();
+    if (!gGlobalBuffer) return NULL;
+
+    CMVideoFormatDescriptionRef fd;
+    CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, &fd);
+    CMSampleTimingInfo ti = { kCMTimeInvalid, CMSampleBufferGetPresentationTimeStamp(original), kCMTimeInvalid };
+    
+    CMSampleBufferRef fake = NULL;
+    CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, gGlobalBuffer, YES, NULL, NULL, fd, &ti, &fake);
+    
+    CFRelease(fd);
+    return fake;
 }
 
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
     if (!enabled) return;
-    
-    self.hidden = YES; // Прячем системное превью
+    self.hidden = YES;
 
     if (!gPlayer) {
-        NSURL *url = [NSURL URLWithString:streamURL];
-        gPlayer = [[AVPlayer alloc] initWithURL:url];
-        
-        NSDictionary *pixBuffAttributes = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
-        gVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:pixBuffAttributes];
+        gPlayer = [[AVPlayer alloc] initWithURL:[NSURL URLWithString:streamURL]];
+        NSDictionary *attrs = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
+        gVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:attrs];
         [gPlayer.currentItem addOutput:gVideoOutput];
+        [gPlayer play];
 
         gPlayerLayer = [AVPlayerLayer playerLayerWithPlayer:gPlayer];
-        gPlayerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
-        [gPlayer play];
-    }
-
-    if (gPlayerLayer) {
         gPlayerLayer.frame = self.bounds;
-        if (gPlayerLayer.superlayer == nil && self.superlayer != nil) {
-            [self.superlayer insertSublayer:gPlayerLayer above:self];
-        }
+        gPlayerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+        [self.superlayer insertSublayer:gPlayerLayer above:self];
+        
+        CADisplayLink *link = [CADisplayLink displayLinkWithTarget:gPlayerLayer selector:@selector(setNeedsDisplay)];
+        [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     }
+    gPlayerLayer.frame = self.bounds;
 }
 %end
 
-// Глубокая подмена видеоданных
 %hook NSObject
 - (void)captureOutput:(id)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(id)connection {
     if (enabled) {
-        SyncFrame();
-        if (gGlobalBuffer) {
-            CMSampleBufferRef fake = CreateSampleBufferFromPixelBuffer(gGlobalBuffer, CMSampleBufferGetPresentationTimeStamp(sampleBuffer));
-            if (fake) {
-                %orig(output, fake, connection);
-                CFRelease(fake);
-                return;
-            }
+        CMSampleBufferRef fake = CreateFakeSampleBuffer(sampleBuffer);
+        if (fake) {
+            %orig(output, fake, connection);
+            CFRelease(fake);
+            return;
         }
     }
     %orig;
 }
 %end
 
-// Подмена фото
 %hook AVCapturePhoto
 - (CVPixelBufferRef)pixelBuffer {
-    SyncFrame();
+    UpdateGlobalBuffer();
     if (enabled && gGlobalBuffer) return CVPixelBufferRetain(gGlobalBuffer);
     return %orig;
 }
-
 - (NSData *)fileDataRepresentation {
-    SyncFrame();
+    UpdateGlobalBuffer();
     if (enabled && gGlobalBuffer) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
         CIContext *ctx = [CIContext contextWithOptions:nil];
