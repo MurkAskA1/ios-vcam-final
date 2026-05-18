@@ -10,45 +10,50 @@ static AVPlayer *gPlayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
 static CVPixelBufferRef gGlobalBuffer = NULL;
 
-static void ForceSync() {
+static void RefreshBuffer() {
     if (!gVideoOutput) return;
     CMTime vTime = [gPlayer.currentItem currentTime];
-    CVPixelBufferRef pb = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
-    if (pb) {
-        if (gGlobalBuffer) CVPixelBufferRelease(gGlobalBuffer);
-        gGlobalBuffer = pb;
-    }
-}
-
-%hook PHAssetCreationRequest
-+ (instancetype)creationRequestForAssetFromImage:(UIImage *)image {
-    if (enabled) {
-        ForceSync();
-        if (gGlobalBuffer) {
-            CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
-            UIImage *fakeImg = [UIImage imageWithCIImage:ci];
-            return %orig(fakeImg);
+    if ([gVideoOutput hasNewPixelBufferForItemTime:vTime]) {
+        CVPixelBufferRef pb = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
+        if (pb) {
+            if (gGlobalBuffer) CVPixelBufferRelease(gGlobalBuffer);
+            gGlobalBuffer = pb;
         }
     }
-    return %orig;
 }
-%end
 
 %hook AVCapturePhoto
 - (CVPixelBufferRef)pixelBuffer {
-    ForceSync();
+    RefreshBuffer();
     if (enabled && gGlobalBuffer) return CVPixelBufferRetain(gGlobalBuffer);
     return %orig;
 }
+
+- (CVPixelBufferRef)previewPixelBuffer {
+    RefreshBuffer();
+    if (enabled && gGlobalBuffer) return CVPixelBufferRetain(gGlobalBuffer);
+    return %orig;
+}
+
 - (NSData *)fileDataRepresentation {
-    ForceSync();
+    RefreshBuffer();
     if (enabled && gGlobalBuffer) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
         CIContext *ctx = [CIContext contextWithOptions:nil];
         CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
-        NSData *data = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.9);
+        NSData *data = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.95);
         if (cg) CGImageRelease(cg);
         return data;
+    }
+    return %orig;
+}
+
+- (CGImageRef)CGImageRepresentation {
+    RefreshBuffer();
+    if (enabled && gGlobalBuffer) {
+        CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
+        CIContext *ctx = [CIContext contextWithOptions:nil];
+        return [ctx createCGImage:ci fromRect:ci.extent];
     }
     return %orig;
 }
@@ -57,7 +62,7 @@ static void ForceSync() {
 %hook NSObject
 - (void)captureOutput:(id)output didOutputSampleBuffer:(CMSampleBufferRef)sb fromConnection:(id)conn {
     if (enabled) {
-        ForceSync();
+        RefreshBuffer();
         if (gGlobalBuffer) {
             CMVideoFormatDescriptionRef fd;
             CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, &fd);
@@ -91,10 +96,13 @@ static void ForceSync() {
         pl.videoGravity = AVLayerVideoGravityResizeAspectFill;
         [self.superlayer insertSublayer:pl above:self];
 
-        [NSTimer scheduledTimerWithTimeInterval:0.01 repeats:YES block:^(NSTimer *t) { ForceSync(); }];
+        [NSTimer scheduledTimerWithTimeInterval:0.01 repeats:YES block:^(NSTimer *t) { RefreshBuffer(); }];
     }
+    
     for (CALayer *sub in self.superlayer.sublayers) {
-        if ([sub isKindOfClass:[AVPlayerLayer class]]) sub.frame = self.bounds;
+        if ([sub isKindOfClass:[AVPlayerLayer class]]) {
+            sub.frame = self.bounds;
+        }
     }
 }
 %end
