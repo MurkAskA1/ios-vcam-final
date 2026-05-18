@@ -9,54 +9,40 @@ static NSString *streamURL = @"http://192.168.1.44:8888/live/stream/index.m3u8";
 static AVPlayer *gPlayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
 static CVPixelBufferRef gGlobalBuffer = NULL;
+static dispatch_semaphore_t gLock;
 
 static void RefreshBuffer() {
-    if (!gVideoOutput) return;
-    CMTime vTime = [gPlayer.currentItem currentTime];
-    if ([gVideoOutput hasNewPixelBufferForItemTime:vTime]) {
-        CVPixelBufferRef pb = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
-        if (pb) {
-            if (gGlobalBuffer) CVPixelBufferRelease(gGlobalBuffer);
-            gGlobalBuffer = pb;
+    if (!gVideoOutput || !enabled) return;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ gLock = dispatch_semaphore_create(1); });
+
+    if (dispatch_semaphore_wait(gLock, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.01 * NSEC_PER_SEC))) == 0) {
+        CMTime vTime = [gPlayer.currentItem currentTime];
+        if ([gVideoOutput hasNewPixelBufferForItemTime:vTime]) {
+            CVPixelBufferRef pb = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
+            if (pb) {
+                if (gGlobalBuffer) CVPixelBufferRelease(gGlobalBuffer);
+                gGlobalBuffer = pb;
+            }
         }
+        dispatch_semaphore_signal(gLock);
     }
 }
-
-@interface VCamPhotoDelegate : NSObject <AVCapturePhotoCaptureDelegate>
-@property (nonatomic, strong) id originalDelegate;
-@end
-
-@implementation VCamPhotoDelegate
-- (void)captureOutput:(AVCapturePhotoOutput *)output didFinishProcessingPhoto:(AVCapturePhoto *)photo error:(NSError *)error {
-    if ([self.originalDelegate respondsToSelector:@selector(captureOutput:didFinishProcessingPhoto:error:)]) {
-        [self.originalDelegate captureOutput:output didFinishProcessingPhoto:photo error:error];
-    }
-}
-@end
-
-%hook AVCapturePhotoOutput
-- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
-    if (enabled && delegate) {
-        VCamPhotoDelegate *proxy = [[VCamPhotoDelegate alloc] init];
-        proxy.originalDelegate = delegate;
-        %orig(settings, proxy);
-        return;
-    }
-    %orig;
-}
-%end
 
 %hook AVCapturePhoto
 - (CVPixelBufferRef)pixelBuffer {
-    RefreshBuffer();
-    return (enabled && gGlobalBuffer) ? CVPixelBufferRetain(gGlobalBuffer) : %orig;
+    if (enabled && gGlobalBuffer) return CVPixelBufferRetain(gGlobalBuffer);
+    return %orig;
 }
+
 - (NSData *)fileDataRepresentation {
-    RefreshBuffer();
     if (enabled && gGlobalBuffer) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
-        UIImage *ui = [UIImage imageWithCIImage:ci];
-        return UIImageJPEGRepresentation(ui, 0.9);
+        CIContext *ctx = [CIContext contextWithOptions:nil];
+        CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
+        NSData *data = UIImageJPEGRepresentation([UIImage imageWithCGImage:cg], 0.9);
+        if (cg) CGImageRelease(cg);
+        return data;
     }
     return %orig;
 }
@@ -79,10 +65,27 @@ static void RefreshBuffer() {
         pl.videoGravity = AVLayerVideoGravityResizeAspectFill;
         [self.superlayer insertSublayer:pl above:self];
 
-        [NSTimer scheduledTimerWithTimeInterval:0.01 repeats:YES block:^(NSTimer *t) { RefreshBuffer(); }];
+        [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(NSTimer *t) { RefreshBuffer(); }];
     }
     for (CALayer *sub in self.superlayer.sublayers) {
         if ([sub isKindOfClass:[AVPlayerLayer class]]) sub.frame = self.bounds;
     }
+}
+%end
+
+%hook NSObject
+- (void)captureOutput:(id)output didOutputSampleBuffer:(CMSampleBufferRef)sb fromConnection:(id)conn {
+    if (enabled && gGlobalBuffer) {
+        CMVideoFormatDescriptionRef fd;
+        CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, &fd);
+        CMSampleTimingInfo ti = { kCMTimeInvalid, CMSampleBufferGetPresentationTimeStamp(sb), kCMTimeInvalid };
+        CMSampleBufferRef fake;
+        CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, gGlobalBuffer, YES, NULL, NULL, fd, &ti, &fake);
+        %orig(output, fake, conn);
+        if (fake) CFRelease(fake);
+        if (fd) CFRelease(fd);
+        return;
+    }
+    %orig;
 }
 %end
