@@ -7,20 +7,31 @@ static NSString *streamURL = @"http://192.168.1.44:8888/live/stream/index.m3u8";
 
 static AVPlayer *gPlayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
-static UILabel *gDebugLabel = nil;
+static UILabel *gStatusLabel = nil;
 
-// Функция для создания системного буфера из кадра плеера
+// Лог файл для Filza
+#define DEBUG_LOG @"/var/mobile/vcam.log"
+
+void WriteLog(NSString *msg) {
+    NSLog(@"[VCam] %@", msg);
+    NSString *content = [NSString stringWithFormat:@"%@: %@\n", [NSDate date], msg];
+    NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:DEBUG_LOG];
+    if (!handle) {
+        [content writeToFile:DEBUG_LOG atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    } else {
+        [handle seekToEndOfFile];
+        [handle writeData:[content dataUsingEncoding:NSUTF8StringEncoding]];
+        [handle closeFile];
+    }
+}
+
 static CMSampleBufferRef CreateSampleBufferFromPixelBuffer(CVPixelBufferRef pixelBuffer, CMTime timestamp) {
     if (!pixelBuffer) return NULL;
-    
     CMVideoFormatDescriptionRef formatDescription;
     CMVideoFormatDescriptionCreateForImageBuffer(NULL, pixelBuffer, &formatDescription);
-    
     CMSampleTimingInfo timingInfo = { kCMTimeInvalid, timestamp, kCMTimeInvalid };
     CMSampleBufferRef sampleBuffer = NULL;
-    
     CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer, YES, NULL, NULL, formatDescription, &timingInfo, &sampleBuffer);
-    
     CFRelease(formatDescription);
     return sampleBuffer;
 }
@@ -29,31 +40,41 @@ static CMSampleBufferRef CreateSampleBufferFromPixelBuffer(CVPixelBufferRef pixe
 - (void)layoutSublayers {
     %orig;
     if (!enabled) return;
-    self.opacity = 0.0; // Скрываем оригинал
+    self.opacity = 0.0;
 
-    UIView *container = (UIView *)self.delegate;
-    if ([container isKindOfClass:[UIView class]] && !gPlayer) {
-        // Инициализируем плеер для захвата кадров
-        gPlayer = [AVPlayer playerWithURL:[NSURL URLWithString:streamURL]];
+    if (!gPlayer) {
+        WriteLog(@"Initializing Player...");
         
-        // Магия: создаем выход для получения сырых кадров из видео
-        NSDictionary *pixBuffAttributes = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
-        gVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:pixBuffAttributes];
-        [gPlayer.currentItem addOutput:gVideoOutput];
-        
-        [gPlayer play];
+        UIWindow *win = [UIApplication sharedApplication].keyWindow;
+        if (!win) win = [[UIApplication sharedApplication].windows firstObject];
 
-        // Маленький индикатор в углу для вас
-        gDebugLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 50, 100, 20)];
-        gDebugLabel.textColor = [UIColor greenColor];
-        gDebugLabel.font = [UIFont boldSystemFontOfSize:10];
-        gDebugLabel.text = @"VCAM INJECTED";
-        [container addSubview:gDebugLabel];
+        if (win) {
+            gStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 100, win.bounds.size.width - 40, 100)];
+            gStatusLabel.textColor = [UIColor yellowColor];
+            gStatusLabel.numberOfLines = 0;
+            gStatusLabel.textAlignment = NSTextAlignmentCenter;
+            gStatusLabel.text = @"VCam: Loading Stream...";
+            [win addSubview:gStatusLabel];
+            
+            NSURL *url = [NSURL URLWithString:streamURL];
+            gPlayer = [AVPlayer playerWithURL:url];
+            
+            NSDictionary *pixBuffAttributes = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
+            gVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:pixBuffAttributes];
+            [gPlayer.currentItem addOutput:gVideoOutput];
+            
+            AVPlayerLayer *pl = [AVPlayerLayer playerLayerWithPlayer:gPlayer];
+            pl.frame = win.bounds;
+            pl.videoGravity = AVLayerVideoGravityResizeAspectFill;
+            [win.layer insertSublayer:pl below:gStatusLabel.layer];
+            
+            [gPlayer play];
+            WriteLog(@"Player started playing");
+        }
     }
 }
 %end
 
-// --- СИСТЕМНАЯ ПОДМЕНА ВИДЕО ---
 %hook NSObject
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
     if (enabled && gVideoOutput) {
@@ -61,10 +82,8 @@ static CMSampleBufferRef CreateSampleBufferFromPixelBuffer(CVPixelBufferRef pixe
         if ([gVideoOutput hasNewPixelBufferForItemTime:vTime]) {
             CVPixelBufferRef pixelBuffer = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
             if (pixelBuffer) {
-                // Создаем поддельный буфер с таймингом реальной камеры
                 CMSampleBufferRef fakeBuffer = CreateSampleBufferFromPixelBuffer(pixelBuffer, CMSampleBufferGetPresentationTimeStamp(sampleBuffer));
                 if (fakeBuffer) {
-                    // ОТПРАВЛЯЕМ СИСТЕМЕ НАШ КАДР
                     %orig(output, fakeBuffer, connection);
                     CFRelease(fakeBuffer);
                     CVPixelBufferRelease(pixelBuffer);
@@ -75,23 +94,5 @@ static CMSampleBufferRef CreateSampleBufferFromPixelBuffer(CVPixelBufferRef pixe
         }
     }
     %orig;
-}
-%end
-
-// --- СИСТЕМНАЯ ПОДМЕНА ФОТО ---
-%hook AVCapturePhoto
-- (CGImageRef)CGImageRepresentation {
-    if (enabled && gVideoOutput) {
-        CMTime vTime = [gPlayer.currentItem currentTime];
-        CVPixelBufferRef pixelBuffer = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
-        if (pixelBuffer) {
-            CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixelBuffer];
-            CIContext *context = [CIContext contextWithOptions:nil];
-            CGImageRef cgImage = [context createCGImage:ciImage fromRect:ciImage.extent];
-            CVPixelBufferRelease(pixelBuffer);
-            return cgImage; // Возвращаем кадр из стрима вместо фото
-        }
-    }
-    return %orig;
 }
 %end
