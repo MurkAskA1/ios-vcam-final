@@ -9,6 +9,7 @@ static NSString *streamURL = @"http://192.168.1.44:8888/live/stream/index.m3u8";
 static AVPlayer *gPlayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
 static CVPixelBufferRef gGlobalBuffer = NULL;
+static CIContext *gCIContext = nil;
 
 static void RefreshBuffer() {
     if (!gVideoOutput || !enabled || !gPlayer) return;
@@ -23,19 +24,43 @@ static void RefreshBuffer() {
     }
 }
 
+// Хук на сам объект фотографии
 %hook AVCapturePhoto
+
 - (CVPixelBufferRef)pixelBuffer {
     RefreshBuffer();
-    if (enabled && gGlobalBuffer) return CVPixelBufferRetain(gGlobalBuffer);
+    if (enabled && gGlobalBuffer) {
+        NSLog(@"[VCP] Spoofing photo pixelBuffer");
+        return CVPixelBufferRetain(gGlobalBuffer);
+    }
+    return %orig;
+}
+
+- (CVPixelBufferRef)previewPixelBuffer {
+    RefreshBuffer();
+    if (enabled && gGlobalBuffer) {
+        return CVPixelBufferRetain(gGlobalBuffer);
+    }
+    return %orig;
+}
+
+- (CGImageRef)CGImageRepresentation {
+    RefreshBuffer();
+    if (enabled && gGlobalBuffer) {
+        if (!gCIContext) gCIContext = [[CIContext alloc] initWithOptions:nil];
+        CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
+        return [gCIContext createCGImage:ci fromRect:ci.extent];
+    }
     return %orig;
 }
 
 - (NSData *)fileDataRepresentation {
     RefreshBuffer();
     if (enabled && gGlobalBuffer) {
+        NSLog(@"[VCP] Spoofing fileDataRepresentation");
+        if (!gCIContext) gCIContext = [[CIContext alloc] initWithOptions:nil];
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
-        CIContext *context = [CIContext contextWithOptions:nil];
-        CGImageRef cg = [context createCGImage:ci fromRect:ci.extent];
+        CGImageRef cg = [gCIContext createCGImage:ci fromRect:ci.extent];
         if (cg) {
             UIImage *ui = [UIImage imageWithCGImage:cg];
             NSData *data = UIImageJPEGRepresentation(ui, 0.8);
@@ -44,6 +69,27 @@ static void RefreshBuffer() {
         }
     }
     return %orig;
+}
+
+%end
+
+// Хук для старых систем и некоторых сторонних приложений
+%hook AVCaptureStillImageOutput
+- (void)captureStillImageAsynchronouslyFromConnection:(id)connection completionHandler:(void (^)(CMSampleBufferRef, NSError *))handler {
+    if (enabled && gGlobalBuffer) {
+        CMSampleBufferRef sbuf = NULL;
+        CMVideoFormatDescriptionRef formatDesc = NULL;
+        CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, &formatDesc);
+        CMSampleTimingInfo timing = { kCMTimeInvalid, kCMTimeInvalid, kCMTimeInvalid };
+        CMSampleBufferCreateForImageBuffer(NULL, gGlobalBuffer, YES, NULL, NULL, formatDesc, &timing, &sbuf);
+        if (sbuf) {
+            handler(sbuf, nil);
+            CFRelease(sbuf);
+            if (formatDesc) CFRelease(formatDesc);
+            return;
+        }
+    }
+    %orig;
 }
 %end
 
