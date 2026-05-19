@@ -9,7 +9,7 @@ static NSString *streamURL = @"http://192.168.1.44:8888/live/stream/index.m3u8";
 
 static AVPlayer *gPlayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
-static volatile CVPixelBufferRef gGlobalBuffer = NULL;
+static CVPixelBufferRef gGlobalBuffer = NULL;
 
 static void RefreshBuffer() {
     if (!gVideoOutput || !enabled) return;
@@ -24,13 +24,19 @@ static void RefreshBuffer() {
     }
 }
 
-@interface VCamFullProxy : NSObject <AVCapturePhotoCaptureDelegate>
+@interface VCamFinalProxy : NSObject <AVCapturePhotoCaptureDelegate>
 @property (nonatomic, strong) id originalDelegate;
 @end
 
-@implementation VCamFullProxy
+@implementation VCamFinalProxy
 - (void)captureOutput:(AVCapturePhotoOutput *)output willBeginCaptureForResolvedSettings:(AVCaptureResolvedPhotoSettings *)settings {
     if ([self.originalDelegate respondsToSelector:_cmd]) [self.originalDelegate captureOutput:output willBeginCaptureForResolvedSettings:settings];
+}
+- (void)captureOutput:(AVCapturePhotoOutput *)output willCapturePhotoForResolvedSettings:(AVCaptureResolvedPhotoSettings *)settings {
+    if ([self.originalDelegate respondsToSelector:_cmd]) [self.originalDelegate captureOutput:output willCapturePhotoForResolvedSettings:settings];
+}
+- (void)captureOutput:(AVCapturePhotoOutput *)output didCapturePhotoForResolvedSettings:(AVCaptureResolvedPhotoSettings *)settings {
+    if ([self.originalDelegate respondsToSelector:_cmd]) [self.originalDelegate captureOutput:output didCapturePhotoForResolvedSettings:settings];
 }
 - (void)captureOutput:(AVCapturePhotoOutput *)output didFinishProcessingPhoto:(AVCapturePhoto *)photo error:(NSError *)error {
     if ([self.originalDelegate respondsToSelector:_cmd]) [self.originalDelegate captureOutput:output didFinishProcessingPhoto:photo error:error];
@@ -40,22 +46,10 @@ static void RefreshBuffer() {
 }
 @end
 
-%hook AVCapturePhotoSettings
-+ (instancetype)photoSettings {
-    AVCapturePhotoSettings *s = %orig;
-    if (enabled) {
-        @try {
-            [s setHighResolutionPhotoEnabled:NO];
-        } @catch (NSException *e) {}
-    }
-    return s;
-}
-%end
-
 %hook AVCapturePhotoOutput
 - (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
-    if (enabled && delegate && ![delegate isKindOfClass:[VCamFullProxy class]]) {
-        VCamFullProxy *proxy = [[VCamFullProxy alloc] init];
+    if (enabled && delegate && ![delegate isKindOfClass:[VCamFinalProxy class]]) {
+        VCamFinalProxy *proxy = [[VCamFinalProxy alloc] init];
         proxy.originalDelegate = delegate;
         %orig(settings, proxy);
         return;
@@ -66,9 +60,11 @@ static void RefreshBuffer() {
 
 %hook AVCapturePhoto
 - (CVPixelBufferRef)pixelBuffer {
+    RefreshBuffer();
     return (enabled && gGlobalBuffer) ? CVPixelBufferRetain(gGlobalBuffer) : %orig;
 }
 - (NSData *)fileDataRepresentation {
+    RefreshBuffer();
     if (enabled && gGlobalBuffer) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
         return UIImageJPEGRepresentation([UIImage imageWithCIImage:ci], 0.95);
@@ -94,7 +90,7 @@ static void RefreshBuffer() {
         pl.videoGravity = AVLayerVideoGravityResizeAspectFill;
         [self.superlayer insertSublayer:pl above:self];
 
-        [NSTimer scheduledTimerWithTimeInterval:0.033 repeats:YES block:^(NSTimer *t) { RefreshBuffer(); }];
+        [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(NSTimer *t) { RefreshBuffer(); }];
     }
 }
 %end
