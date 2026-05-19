@@ -1,1 +1,191 @@
-I2ltcG9ydCA8VUlLaXQvVUlLaXQuaD4KI2ltcG9ydCA8QVZGb3VuZGF0aW9uL0FWRm91bmRhdGlvbi5oPgojaW1wb3J0IDxDb3JlTWVkaWEvQ29yZU1lZGlhLmg+CiNpbXBvcnQgPFBob3Rvcy9QaG90b3MuaD4KI2ltcG9ydCA8b2JqYy9ydW50aW1lLmg+CgovLyDQn9C10YDQtdC80LXQvdC90YvQtSDRgdC10YLRgtC40L3Qs9C+0LIg0YEg0L7RgtC60LDRgtC+0Lwg0L3QsCDQtNC10YTQvtC70YIKc3RhdGljIEJPT0wgZW5hYmxlZCA9IFlFUzsKc3RhdGljIE5TU3RyaW5nICpzdHJlYW1VUkwgPSBAImh0dHA6Ly8xOTIuMTY4LjEuNDQ6ODg4OC9saXZlL3N0cmVhbS9pbmRleC5tM3U4IjsKCnN0YXRpYyBBVlBsYXllciAqZ1BsYXllciA9IG5pbDsKc3RhdGljIEFWUGxheWVySXRlbVZpZGVvT3V0cHV0ICpnVmlkZW9PdXRwdXQgPSBuaWw7CnN0YXRpYyBDVlBpeGVsQnVmZmVyUmVmIGdHbG9iYWxCdWZmZXIgPSBOVUxMOwoKLy8g0JfQsNCz0YDRg9C30LrQsCDQvdCw0YHRgtGA0L7QtdC6CnN0YXRpYyB2b2lkIGxvYWRQcmVmcygpIHsKICAgIE5TRGljdGlvbmFyeSAqcHJlZnMgPSBbTlNEaWN0aW9uYXJ5IGRpY3Rpb25hcnlXaXRoQ29udGVudHNPZkZpbGU6QCIvdmFyL21vYmlsZS9MaWJyYXJ5L1ByZWZlcmVuY2VzL2NvbS5tdXJrYXNrYS52aXJ0dWFsY2FtcHJvLnBsaXN0Il07CiAgICBpZiAocHJlZnMpIHsKICAgICAgICBlbmFibGVkID0gcHJlZnNbQCJlbmFibGVkIl0gPyBbcHJlZnNbQCJlbmFibGVkIl0gYm9vbFZhbHVlXSA6IFlFUzsKICAgICAgICBOU1N0cmluZyAqdXJsID0gcHJlZnNbQCJydHNwVVJMIl07CiAgICAgICAgaWYgKHVybCAmJiB1cmwubGVuZ3RoID4gMCkgc3RyZWFtVVJMID0gdXJsOwogICAgfQp9CgpzdGF0aWMgdm9pZCBSZWZyZXNoQnVmZmVyKCkgewogICAgaWYgKCFnVmlkZW9PdXRwdXQgfHwgIWVuYWJsZWQpIHJldHVybjsKICAgIENNVGltZSB2VGltZSA9IFtnUGxheWVyLmN1cnJlbnRJdGVtIGN1cnJlbnRUaW1lXTsKICAgIGlmIChbZ1ZpZGVvT3V0cHV0IGhhc05ld1BpeGVsQnVmZmVyRm9ySXRlbVRpbWU6dlRpbWVdKSB7CiAgICAgICAgQ1ZQaXhlbEJ1ZmZlclJlZiBwYiA9IFtnVmlkZW9PdXRwdXQgY29weVBpeGVsQnVmZmVyRm9ySXRlbVRpbWU6dlRpbWVgaXRlbVRpbWVGb3JEaXNwbGF5Ok5VTExdOwogICAgICAgIGlmIChwYikgewogICAgICAgICAgICBDVlBpeGVsQnVmZmVyUmVmIG9sZCA9IGdHbG9iYWxCdWZmZXI7CiAgICAgICAgICAgIGdHbG9iYWxCdWZmZXIgPSBwYjsgCiAgICAgICAgICAgIGlmIChvbGQpIENWUGl4ZWxCdWZmZXJSZWxlYXNlKG9sZCk7CiAgICAgICAgfQogICAgfQp9CgovLyDQn9GA0L7QutGB0Lgg0LTQu9GPINC00LXQu9C10LPQsNGC0L7QsiDRhNC+0YLQvi3QstGL0LLQvtC00LAgKGlPUyAxMCspCkBpbnRlcmZhY2UgVkNhbVVuaXZlcnNhbFByb3h5IDogTlNQcm94eSA8QVZDYXB0dXJlUGhvdG9DYXB0dXJlRGVsZWdhdGU+CkBwcm9wZXJ0eSAobm9uYXRvbWljLCBzdHJvbmcpIGlkIG9yaWdpbmFsRGVsZWdhdGU7CkBlbmQKCkBpbXBsZW1lbnRhdGlvbiBWQ2FtVW5pdmVyc2FsUHJveHkKIC0gKGluc3RhbmNldHlwZSlpbml0V2l0aERlbGVnYXRlOihpZClkZWxlZ2F0ZSB7CiAgICBfb3JpZ2luYWxEZWxlZ2F0ZSA9IGRlbGVnYXRlOwogICAgcmV0dXJuIHNlbGY7Cn0KLSAoTlNNZXRob2RTaWduYXR1cmUgKiltZXRob2RTaWduYXR1cmVGb3JTZWxlY3RvcjooU0VMKXNlbCB7CiAgICByZXR1cm4gW3NlbGYub3JpZ2luYWxEZWxlZ2F0ZSBtZXRob2RTaWduYXR1cmVGb3JTZWxlY3RvcjpzZWxdOwp9Ci0gKHZvaWQpZm9yd2FyZEludm9jYXRpb246KE5TSW52b2NhdGlvbiAqKWludm9jYXRpb24gewogICAgW2ludm9jYXRpb24gaW52b2tlV2l0aFRhcmdldDpzZWxmLm9yaWdpbmFsRGVsZWdhdGVdOwp9Ci0gKEJPT0wpcmVzcG9uZHNUb1NlbGVjdG9yOihTRUwpc2VsIHsKICAgIHJldHVybiBbc2VsZi5vcmlnaW5hbERlbGVnYXRlIHJlc3BvbmRzVG9TZWxlY3RvcjpzZWxdOwp9Ci0gKHZvaWQpY2FwdHVyZU91dHB1dDooQVZDYXB0dXJlUGhvdG9PdXRwdXQgKilvdXRwdXQgZGlkRmluaXNoUHJvY2Vzc2luZ1Bob3RvOihBVkNhcHR1cmVQaG90byAqKXBob3RvIGVycm9yOihOU0Vycm9yICopZXJyb3IgewogICAgaWYgKFtzZWxmLm9yaWdpbmFsRGVsZWdhdGUgcmVzcG9uZHNUb1NlbGVjdG9yOl9jbWRdKSB7CiAgICAgICAgW3NlbGYub3JpZ2luYWxEZWxlZ2F0ZSBjYXB0dXJlT3V0cHV0Om91dHB1dCBkaWRGaW5pc2hQcm9jZXNzaW5nUGhvdG86cGhvdG8gZXJyb3I6ZXJyb3JdOwogICAgfQp9CkBlbmQKCiUob29rIEFWQ2FwdHVyZVBob3RvT3V0cHV0Ci0gKHZvaWQpY2FwdHVyZVBob3RvV2l0aFNldHRpbmdzOihBVkNhcHR1cmVQaG90b1NldHRpbmdzICopc2V0dGluZ3MgZGVsZWdhdGU6KGlkPEFWQ2FwdHVyZVBob3RvQ2FwdHVyZURlbGVnYXRlPilkZWxlZ2F0ZSB7CiAgICBpZiAoZW5hYmxlZCAmJiBkZWxlZ2F0ZSkgewogICAgICAgIFZDYW1Vbml2ZXJzYWxQcm94eSAqcHJveHkgPSBbW1ZDYW1Vbml2ZXJzYWxQcm94eSBhbGxvY10gaW5pdFdpdGhEZWxlZ2F0ZTpkZWxlZ2F0ZV07CiAgICAgICAgJW9yaWcoc2V0dGluZ3MsIChpZDxBVkNhcHR1cmVQaG90b0NhcHR1cmVEZWxlZ2F0ZT4pcHJveHkpOwogICAgICAgIHJldHVybjsKICAgIH0KICAgICVvcmlnOwp9CiVlbmQKCi8vINCT0LvRg9Cx0L7QutC40Lkg0L/QtdGA0LXRhdCy0LDRgiDQtNCw0L3QvdGL0YUg0YTQvtGC0L7QutCw0LTRgNCwCilaG9vayBBVkNhcHR1cmVQaG90bwotIChDVlBpeGVsQnVmZmVyUmVmKXBpeGVsQnVmZmVyIHsKICAgIFJlZnJlc2hCdWZmZXIoKTsKICAgIHJldHVybiAoZW5hYmxlZCAmJiBnR2xvYmFsQnVmZmVyKSA/IENWUGl4ZWxCdWZmZXJSZXRhaW4oZ0dsb2JhbEJ1ZmZlcmIpID8gJW9yaWc7Cn0KLSAoQ0dJbWFnZVJlZilDR0ltYWdlUmVwcmVzZW50YXRpb24gewogICAgUmVmcmVzaEJ1ZmZlcigpOwogICAgaWYgKGVuYWJsZWQgJiYgZ0dsb2JhbEJ1ZmZlcikgewogICAgICAgIENJSW1hZ2UgKmNpID0gW0NJSW1hZ2UgaW1hZ2VXaXRoQ1ZQaXhlbEJ1ZmZlcl9nR2xvYmFsQnVmZmVyXTsKICAgICAgICBDSUNvbnRleHQgKmNvbnRleHQgPSBbQ0lDb250ZXh0IGNvbnRleHRXaXRoT3B0aW9uczpuaWxdOwogICAgICAgIHJldHVybiBbY29udGV4dCBjcmVhdGVDR0ltYWdlOmNpIGZyb21SZWN0OmNpLmV4dGVudF07CiAgICB9CiAgICByZXR1cm4gJW9yaWc7Cn0KLSAoTlNEYXRhICopZmlsZURhdGFSZXByZXNlbnRhdGlvbiB7CiAgICBSZWZyZXNoQnVmZmVyKCk7CiAgICBpZiAoZW5hYmxlZCAmJiBnR2xvYmFsQnVmZmVyKSB7CiAgICAgICAgQ0lJbWFnZSAqY2kgPSBbQ0lJbWFnZSBpbWFnZVdpdGhDVlBpeGVsQnVmZmVyOmdHbG9iYWxCdWZmZXJdOwogICAgICAgIFVJSW1hZ2UgKnVpID0gW1VJSW1hZ2UgaW1hZ2VXaXRoQ0lJbWFnZTpjaV07CiAgICAgICByZXR1cm4gVUlJbWFnZUpQRUdSZXByZXNlbnRhdGlvbih1aSwgMC45KTsKICAgIH0KICAgIHJldHVybiAlb3JpZzsKfQolZW5kCgovLyDQn9C10YDQtdGF0LLQsNGCINGB0YLQsNGA0L7Qs9C+INCv0LTRgNCwINGE0L7RgtC+LdCy0YvQstC70L7QstC+0LQKJWhvb2sgQVZDYXB0dXJlU3RpbGxJbWFnZU91dHB1dAotICh2b2lkKWNhcHR1cmVTdGlsbEltYWdlQXN5bmNocm9ub3VzbHlGcm9tQ29ubmVjdGlvbjooQVZDYXB0dXJlQ29ubmVjdGlvbiAqKWNvbm5lY3Rpb24gY29tcGxldGlvbkhhbmRsZXI6KHZvaWQgKF4pKENNU2FtcGxlQnVmZmVyUmVmLCBOU0Vycm9yICopKWhhbmRsZXIgewogICAgaWYgKGVuYWJsZWQpIHsKICAgICAgICBSZWZyZXNoQnVmZmVyKCk7CiAgICAgICAgaWYgKGdHbG9iYWxCdWZmZXIpIHsKICAgICAgICAgICAgQ01TYW1wbGVCdWZmZXJSZWYgc2J1ZiA9IE5VTEw7CiAgICAgICAgICAgIENNVmlkZW9Gb3JtYXREZXNjcmlwdGlvblJlZiBmb3JtYXREZXNjID0gTlVMTDsKICAgICAgICAgICAgQ01WaWRlb0Zvcm1hdERlc2NyaXB0aW9uQ3JlYXRlRm9ySW1hZ2VCdWZmZXIoTlVMTCwgZ0dsb2JhbEJ1ZmZlciwgJmZvcm1hdERlc2MpOwogICAgICAgICAgICBDTVNhbXBsZVRpbWluZ0luZm8gdGltaW5nID0geyBrQ01UaW1lSW52YWxpZCwga0NNVGltZUludmFsaWQsIGtDTVRpbWVJbnZhbGlkIH07CiAgICAgICAgICAgIENNU2FtcGxlQnVmZmVyQ3JlYXRlRm9ySW1hZ2VCdWZmZXIoTlVMTCwgZ0dsb2JhbEJ1ZmZlciwgWUVTLCBOVUxMLCBOVUxMLCBmb3JtYXREZXNjLCAmdGltaW5nLCAmc2J1Zik7CiAgICAgICAgICAgIGlmIChzYnVmKSB7CiAgICAgICAgICAgICAgICBoYW5kbGVyKHNidWYsIG5pbCk7CiAgICAgICAgICAgICAgICBDRlRlbGVhc2Uoc2J1Zik7CiAgICAgICAgICAgICAgICBpZiAoZm9ybWF0RGVzYykgQ0ZSZWxlYXNlKGZvcm1hdERlc2MpOwogICAgICAgICAgICAgICAgcmV0dXJuOwogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfQogICAgJW9yaWc7Cn0KJWVuZAoKLy8g0J/QtdGA0LXRGF0LLQsNGCINCy0LjQtNC10L7Qv9C+0YLQvtC60LAgKNC00LvRjyBUZWxlZ3JhbSwgV2hhdHNBcHAg0Lgg0YQu0LQuKQpAaW50ZXJmYWNlIFZDYW1WaWRlb0RhdGFQcm94eSA6IE5TT2JqZWN0CkBycHJvcGVydHkgKG5vbmF0b21pYywgc3Ryb25nKSBpZCBvcmlnaW5hbERlbGVnYXRlOwpAZW5kCgpAaW1wbGVtZW50YXRpb24gVkNhbVZpZGVvRGF0YVByb3h5Ci0gKHZvaWQpY2FwdHVyZU91dHB1dDooQVZDYXB0dXJlT3V0cHV0ICopb3V0cHV0IGRpZE91dHB1dFNhbXBsZUJ1ZmZlcjooQ01TYW1wbGVCdWZmZXJSZWYpc2FtcGxlQnVmZmVyIGZyb21Db25uZWN0aW9uOihBVkNhcHR1cmVDb25uZWN0aW9uICopY29ubmVjdGlvbiB7CiAgICBpZiAoZW5hYmxlZCkgewogICAgICAgIFJlZnJlc2hCdWZmZXIoKTsKICAgICAgICBpZiAoZ0dsb2JhbEJ1ZmZlcikgewogICAgICAgICAgICBDTVNhbXBsZUJ1ZmZlclJlZiBuZXdTYnVmID0gTlVMTDsKICAgICAgICAgICAgQ01Gb3JtYXREZXNjcmlwdGlvblJlZiBmb3JtYXREZXNjID0gTlVMTDsKICAgICAgICAgICAgQ01WaWRlb0Zvcm1hdERlc2NyaXB0aW9uQ3JlYXRlRm9ySW1hZ2VCdWZmZXIoTlVMTCwgZ0dsb2JhbEJ1ZmZlciwgK0NNVmlkZW9Gb3JtYXREZXNjcmlwdGlvblJlZiAqKSZmb3JtYXREZXNjKTsKICAgICAgICAgICAgCiAgICAgICAgICAgIENNU2FtcGxlVGltaW5nSW5mbyB0aW1pbmdJbmZvOwogICAgICAgICAgICBDTVNhbXBsZUJ1ZmZlckdldFNhbXBsZVRpbWluZ0luZm8oc2FtcGxlQnVmZmVyLCAwLCAmdGltaW5nSW5mbyk7CiAgICAgICAgICAgIAogICAgICAgICAgICBDTVNhbXBsZUJ1ZmZlckNyZWF0ZUZvckltYWdlQnVmZmVyKGtDRkFsbG9jYXRvckRlZmF1bHQsIGdHbG9iYWxCdWZmZXIsIFlFUywgTlVMTCwgTlVMTCwgKENNVmlkZW9Gb3JtYXREZXNjcmlwdGlvblJlZilmb3JtYXREZXNjLCAmdGltaW5nSW5mbywgJm5ld1NidWYpOwogICAgICAgICAgICAKICAgICAgICAgICAgaWYgKG5ld1NidWYpIHsKICAgICAgICAgICAgICAgIGlmIChbc2VsZi5vcmlnaW5hbERlbGVnYXRlIHJlc3BvbmRzVG9TZWxlY3RvcjpAc2VsZWN0b3IoY2FwdHVyZU91dHB1dDpkaWRPdXRwdXRTYW1wbGVCdWZmZXI6ZnJvbUNvbm5lY3Rpb246KV0pIHsKICAgICAgICAgICAgICAgICAgICBbc2VsZi5vcmlnaW5hbERlbGVnYXRlIGNhcHR1cmVPdXRwdXQ6b3V0cHV0IGRpZE91dHB1dFNhbXBsZUJ1ZmZlcjpuZXdTYnVmIGZyb21Db25uZWN0aW9uOmNvbm5lY3Rpb25dOwogICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgQ0ZSZWxlYXNlKG5ld1NidWYpOwogICAgICAgICAgICAgICAgaWYgKGZvcm1hdERlc2MpIENGUmVsZWFzZShmb3JtYXREZXNjKTsKICAgICAgICAgICAgICAgIHJldHVybjsKICAgICAgICAgICAgfQogICAgICAgIH0KICAgIH0KICAgIGlmIChbc2VsZi5vcmlnaW5hbERlbGVnYXRlIHJlc3BvbmRzVG9TZWxlY3RvcjpAc2VsZWN0b3IoY2FwdHVyZU91dHB1dDpkaWRPdXRwdXRTYW1wbGVCdWZmZXI6ZnJvbUNvbm5lY3Rpb246KV0pIHsKICAgICAgICBbc2VsZi5vcmlnaW5hbERlbGVnYXRlIGNhcHR1cmVPdXRwdXQ6b3V0cHV0IGRpZE91dHB1dFNhbXBsZUJ1ZmZlcjpzYW1wbGVCdWZmZXIgZnJvbUNvbm5lY3Rpb246Y29ubmVjdGlvbl07CiAgICB9Cn0KQEVuZAoKJWhvb2sgQVZDYXB0dXJlVmlkZW9EYXRhT3V0cHV0Ci0gKHZvaWQpc2V0U2FtcGxlQnVmZmVyRGVsZWdhdGU6KGlkKWRlbGVnYXRlIHF1ZXVlOihkaXNwYXRjaF9xdWV1ZV90KWNhbGxiYWNrUXVldWUgewogICAgaWYgKGVuYWJsZWQgJiYgZGVsZWdhdGUpIHsKICAgICAgICBWQ2FtVmlkZW9EYXRhUHJveHkgKnByb3h5ID0gW1tWQ2FtVmlkZW9EYXRhUHJveHkgYWxsb2NdIGluaXRdOwogICAgICAgIHByb3h5Lm9yaWdpbmFsRGVsZWdhdGUgPSBkZWxlZ2F0ZTsKICAgICAgICBvYmpjX3NldEFzc29jaWF0ZWRPYmplY3Qoc2VsZiwgQHNlbGVjdG9yKHNldFNhbXBsZUJ1ZmZlckRlbGVnYXRlOnF1ZXVlOiksIHByb3h5LCBPQkpDX0FTU09DSUFUSU9OX1JFVEFJTl9OT05BVE9NSUMpOwogICAgICAgICVvcmlnKHByb3h5LCBjYWxsYmFja1F1ZXVlKTsKICAgIH0gZWxzZSB7CiAgICAgICAgJW9yaWc7CiAgICB9Cn0KJWVuZAoKLy8g0KXRg9C6INC90LAg0YHQu9C+0Lkg0L/RgNC10LTRv9GA0L7RgdC80L7RgtGA0LAKJWhvb2sgQVZDYXB0dXJlVmlkZW9QcmV2aWV3TGF5ZXIKLSAodm9pZClsYXlvdXRTdWJsYXllcnMgewogICAgJW9yaWc7CiAgICBpZiAoIWVuYWJsZWQpIHJldHVybjsKICAgIHNlbGYuaGlkZGVuID0gWUVTOwoKICAgIGlmICghZ1BsYXllcikgewogICAgICAgIGxvYWRQcmVmcygpOwogICAgICAgIGdQbGF5ZXIgPSBbW0FWUGxheWVyIGFsbG9jXSBpbml0V2l0aFVSTDpbTlNVUkwgVVJMV2l0aFN0cmluZzpzdHJlYW1VUkxdXTsKICAgICAgICBnVmlkZW9PdXRwdXQgPSBbW0FWUGxheWVySXRlbVZpZGVvT3V0cHV0IGFsbG9jXSBpbml0V2l0aFBpeGVsQnVmZmVyQXR0cmlidXRlczpAeyhpZClrQ1ZQaXhlbEJ1ZmZlclBpeGVsRm9ybWF0VHlwZUtleTogQChrQ1ZQaXhlbEZvcm1hdFR5cGVfMzJCR1JBKX1dOwogICAgICAgIFtnUGxheWVyLmN1cnJlbnRJdGVtIGFkZE91dHB1dDpnVmlkZW9PdXRwdXRdOwogICAgICAgIFtnUGxheWVyIHBsYXldOwoKICAgICAgICBBVlBsYXllckxheWVyICpwbCA9IFtBVlBsYXllckxheWVyIHBsYXllckxheWVyV2l0aFBsYXllcjpnUGxheWVyXTsKICAgICAgICBwbC5mcmFtZSA9IHNlbGYuYm91bmRzOwogICAgICAgIHBsLnZpZGVvR3Jhdml0eSA9IEFWTGF5ZXJWaWRlb0dyYXZpdHlSZXNpemVBc3BlY3RGaWxsOwogICAgICAgIFtzZWxmLnN1cGVybGF5ZXIgaW5zZXJ0U3VibGF5ZXI6cGwgYWJvdmU6c2VsZl07CgogICAgICAgIFtOU1RpbWVyIHNjaGVkdWxlZFRpbWVyV2l0aFRpbWVJbnRlcnZhbDowLjAzIHJlcGVhdHM6WUVTIGJsb2NrOl4oTlNUaW1lciAqdCkgeyBSZWZyZXNoQnVmZmVyKCk7IH1dOwogICAgfQp9CislZW5kCgolaW5pdCB7CiAgICBsb2FkUHJlZnMoKTsKICAgIENGTm90aWZpY2F0aW9uQ2VudGVyQWRkT2JzZXJ2ZXIoQ0ZOb3RpZmljYXRpb25DZW50ZXJHZXREYXJ3aW5Ob3RpZmljYXRpb25DZW50ZXIoKSwgTlVMTCwgKENGTm90aWZpY2F0aW9uQ2FsbGJhY2spbG9hZFByZWZzLCBDRlNUUigiY29tLm11cmthc2thLnZpcnR1YWxjYW1wcm8vc2V0dGluZ3NjaGFuZ2VkIiksIE5VTEwsIENGTm90aWZpY2F0aW9uU3VzcGVuc2lvbkJlaGF2aW9yQ29hbGVzY2UpOwogICAgJWluaXQ7Cn0K
+#import <UIKit/UIKit.h>
+#import <AVFoundation/AVFoundation.h>
+#import <CoreMedia/CoreMedia.h>
+#import <Photos/Photos.h>
+#import <objc/runtime.h>
+
+// Настройки
+static BOOL enabled = YES;
+static NSString *streamURL = @"http://192.168.1.44:8888/live/stream/index.m3u8";
+
+static AVPlayer *gPlayer = nil;
+static AVPlayerItemVideoOutput *gVideoOutput = nil;
+static CVPixelBufferRef gGlobalBuffer = NULL;
+
+static void loadPrefs() {
+    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
+    if (prefs) {
+        enabled = prefs[@"enabled"] ? [prefs[@"enabled"] boolValue] : YES;
+        NSString *url = prefs[@"rtspURL"];
+        if (url && url.length > 0) streamURL = url;
+    }
+}
+
+static void RefreshBuffer() {
+    if (!gVideoOutput || !enabled) return;
+    CMTime vTime = [gPlayer.currentItem currentTime];
+    if ([gVideoOutput hasNewPixelBufferForItemTime:vTime]) {
+        CVPixelBufferRef pb = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
+        if (pb) {
+            CVPixelBufferRef old = gGlobalBuffer;
+            gGlobalBuffer = pb; 
+            if (old) CVPixelBufferRelease(old);
+        }
+    }
+}
+
+@interface VCamUniversalProxy : NSProxy <AVCapturePhotoCaptureDelegate>
+@property (nonatomic, strong) id originalDelegate;
+@end
+
+@implementation VCamUniversalProxy
+- (instancetype)initWithDelegate:(id)delegate {
+    _originalDelegate = delegate;
+    return self;
+}
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)sel {
+    return [self.originalDelegate methodSignatureForSelector:sel];
+}
+- (void)forwardInvocation:(NSInvocation *)invocation {
+    [invocation invokeWithTarget:self.originalDelegate];
+}
+- (BOOL)respondsToSelector:(SEL)sel {
+    return [self.originalDelegate respondsToSelector:sel];
+}
+- (void)captureOutput:(AVCapturePhotoOutput *)output didFinishProcessingPhoto:(AVCapturePhoto *)photo error:(NSError *)error {
+    if ([self.originalDelegate respondsToSelector:_cmd]) {
+        [self.originalDelegate captureOutput:output didFinishProcessingPhoto:photo error:error];
+    }
+}
+@end
+
+%hook AVCapturePhotoOutput
+- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
+    if (enabled && delegate) {
+        VCamUniversalProxy *proxy = [[VCamUniversalProxy alloc] initWithDelegate:delegate];
+        %orig(settings, (id<AVCapturePhotoCaptureDelegate>)proxy);
+        return;
+    }
+    %orig;
+}
+%end
+
+%hook AVCapturePhoto
+- (CVPixelBufferRef)pixelBuffer {
+    RefreshBuffer();
+    return (enabled && gGlobalBuffer) ? CVPixelBufferRetain(gGlobalBuffer) : %orig;
+}
+- (CGImageRef)CGImageRepresentation {
+    RefreshBuffer();
+    if (enabled && gGlobalBuffer) {
+        CIImage *ci = [CIImage imageWithCIImage:[CIImage imageWithCVPixelBuffer:gGlobalBuffer]];
+        CIContext *context = [CIContext contextWithOptions:nil];
+        return [context createCGImage:ci fromRect:ci.extent];
+    }
+    return %orig;
+}
+- (NSData *)fileDataRepresentation {
+    RefreshBuffer();
+    if (enabled && gGlobalBuffer) {
+        CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
+        UIImage *ui = [UIImage imageWithCIImage:ci];
+        return UIImageJPEGRepresentation(ui, 0.9);
+    }
+    return %orig;
+}
+%end
+
+%hook AVCaptureStillImageOutput
+- (void)captureStillImageAsynchronouslyFromConnection:(AVCaptureConnection *)connection completionHandler:(void (^)(CMSampleBufferRef, NSError *))handler {
+    if (enabled) {
+        RefreshBuffer();
+        if (gGlobalBuffer) {
+            CMSampleBufferRef sbuf = NULL;
+            CMVideoFormatDescriptionRef formatDesc = NULL;
+            CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, &formatDesc);
+            CMSampleTimingInfo timing = { kCMTimeInvalid, kCMTimeInvalid, kCMTimeInvalid };
+            CMSampleBufferCreateForImageBuffer(NULL, gGlobalBuffer, YES, NULL, NULL, formatDesc, &timing, &sbuf);
+            if (sbuf) {
+                handler(sbuf, nil);
+                CFRelease(sbuf);
+                if (formatDesc) CFRelease(formatDesc);
+                return;
+            }
+        }
+    }
+    %orig;
+}
+%end
+
+@interface VCamVideoDataProxy : NSObject
+@property (nonatomic, strong) id originalDelegate;
+@end
+
+@implementation VCamVideoDataProxy
+- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
+    if (enabled) {
+        RefreshBuffer();
+        if (gGlobalBuffer) {
+            CMSampleBufferRef newSbuf = NULL;
+            CMFormatDescriptionRef formatDesc = NULL;
+            CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, &formatDesc);
+            CMSampleTimingInfo timingInfo;
+            CMSampleBufferGetSampleTimingInfo(sampleBuffer, 0, &timingInfo);
+            CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, gGlobalBuffer, YES, NULL, NULL, (CMVideoFormatDescriptionRef)formatDesc, &timingInfo, &newSbuf);
+            if (newSbuf) {
+                if ([self.originalDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
+                    [self.originalDelegate captureOutput:output didOutputSampleBuffer:newSbuf fromConnection:connection];
+                }
+                CFRelease(newSbuf);
+                if (formatDesc) CFRelease(formatDesc);
+                return;
+            }
+        }
+    }
+    if ([self.originalDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
+        [self.originalDelegate captureOutput:output didOutputSampleBuffer:sampleBuffer fromConnection:connection];
+    }
+}
+@end
+
+%hook AVCaptureVideoDataOutput
+- (void)setSampleBufferDelegate:(id)delegate queue:(dispatch_queue_t)callbackQueue {
+    if (enabled && delegate) {
+        VCamVideoDataProxy *proxy = [[VCamVideoDataProxy alloc] init];
+        proxy.originalDelegate = delegate;
+        objc_setAssociatedObject(self, @selector(setSampleBufferDelegate:queue:), proxy, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        %orig(proxy, callbackQueue);
+    } else {
+        %orig;
+    }
+}
+%end
+
+%hook AVCaptureVideoPreviewLayer
+- (void)layoutSublayers {
+    %orig;
+    if (!enabled) return;
+    self.hidden = YES;
+
+    if (!gPlayer) {
+        loadPrefs();
+        gPlayer = [[AVPlayer alloc] initWithURL:[NSURL URLWithString:streamURL]];
+        gVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
+        [gPlayer.currentItem addOutput:gVideoOutput];
+        [gPlayer play];
+
+        AVPlayerLayer *pl = [AVPlayerLayer playerLayerWithPlayer:gPlayer];
+        pl.frame = self.bounds;
+        pl.videoGravity = AVLayerVideoGravityResizeAspectFill;
+        [self.superlayer insertSublayer:pl above:self];
+
+        [NSTimer scheduledTimerWithTimeInterval:0.03 repeats:YES block:^(NSTimer *t) { RefreshBuffer(); }];
+    }
+}
+%end
+
+%ctor {
+    loadPrefs();
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)loadPrefs, CFSTR("com.murkaska.virtualcampro/settingschanged"), NULL, CFNotificationSuspensionBehaviorCoalesce);
+    %init;
+}
