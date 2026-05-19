@@ -24,28 +24,20 @@ static void RefreshBuffer() {
     }
 }
 
-// Хук на сам объект фотографии
+// Глубокий перехват данных фото
 %hook AVCapturePhoto
 
 - (CVPixelBufferRef)pixelBuffer {
-    RefreshBuffer();
-    if (enabled && gGlobalBuffer) {
-        NSLog(@"[VCP] Spoofing photo pixelBuffer");
-        return CVPixelBufferRetain(gGlobalBuffer);
-    }
+    if (enabled && gGlobalBuffer) return CVPixelBufferRetain(gGlobalBuffer);
     return %orig;
 }
 
 - (CVPixelBufferRef)previewPixelBuffer {
-    RefreshBuffer();
-    if (enabled && gGlobalBuffer) {
-        return CVPixelBufferRetain(gGlobalBuffer);
-    }
+    if (enabled && gGlobalBuffer) return CVPixelBufferRetain(gGlobalBuffer);
     return %orig;
 }
 
 - (CGImageRef)CGImageRepresentation {
-    RefreshBuffer();
     if (enabled && gGlobalBuffer) {
         if (!gCIContext) gCIContext = [[CIContext alloc] initWithOptions:nil];
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
@@ -55,36 +47,34 @@ static void RefreshBuffer() {
 }
 
 - (NSData *)fileDataRepresentation {
-    RefreshBuffer();
     if (enabled && gGlobalBuffer) {
-        NSLog(@"[VCP] Spoofing fileDataRepresentation");
         if (!gCIContext) gCIContext = [[CIContext alloc] initWithOptions:nil];
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
         CGImageRef cg = [gCIContext createCGImage:ci fromRect:ci.extent];
         if (cg) {
             UIImage *ui = [UIImage imageWithCGImage:cg];
-            NSData *data = UIImageJPEGRepresentation(ui, 0.8);
+            NSData *data = UIImageJPEGRepresentation(ui, 0.9);
             CGImageRelease(cg);
             return data;
         }
     }
     return %orig;
 }
-
 %end
 
-// Хук для старых систем и некоторых сторонних приложений
-%hook AVCaptureStillImageOutput
-- (void)captureStillImageAsynchronouslyFromConnection:(id)connection completionHandler:(void (^)(CMSampleBufferRef, NSError *))handler {
+// Хук на видеопоток (для Telegram/WhatsApp и прецизионного захвата фото)
+%hook AVCaptureVideoDataOutput
+- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
     if (enabled && gGlobalBuffer) {
-        CMSampleBufferRef sbuf = NULL;
-        CMVideoFormatDescriptionRef formatDesc = NULL;
-        CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, &formatDesc);
-        CMSampleTimingInfo timing = { kCMTimeInvalid, kCMTimeInvalid, kCMTimeInvalid };
-        CMSampleBufferCreateForImageBuffer(NULL, gGlobalBuffer, YES, NULL, NULL, formatDesc, &timing, &sbuf);
-        if (sbuf) {
-            handler(sbuf, nil);
-            CFRelease(sbuf);
+        CMSampleBufferRef newSbuf = NULL;
+        CMFormatDescriptionRef formatDesc = NULL;
+        CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, (CMVideoFormatDescriptionRef *)&formatDesc);
+        CMSampleTimingInfo timing;
+        CMSampleBufferGetSampleTimingInfo(sampleBuffer, 0, &timing);
+        CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, gGlobalBuffer, YES, NULL, NULL, (CMVideoFormatDescriptionRef)formatDesc, &timing, &newSbuf);
+        if (newSbuf) {
+            %orig(output, newSbuf, connection);
+            CFRelease(newSbuf);
             if (formatDesc) CFRelease(formatDesc);
             return;
         }
@@ -93,6 +83,7 @@ static void RefreshBuffer() {
 }
 %end
 
+// Основной хук для замены картинки на экране
 %hook AVCaptureVideoPreviewLayer
 - (void)layoutSublayers {
     %orig;
