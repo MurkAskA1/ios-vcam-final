@@ -24,34 +24,36 @@ static void RefreshBuffer() {
     }
 }
 
-@interface VCamFinalProxy : NSObject <AVCapturePhotoCaptureDelegate>
+@interface VCamUniversalProxy : NSProxy <AVCapturePhotoCaptureDelegate>
 @property (nonatomic, strong) id originalDelegate;
 @end
 
-@implementation VCamFinalProxy
-- (void)captureOutput:(AVCapturePhotoOutput *)output willBeginCaptureForResolvedSettings:(AVCaptureResolvedPhotoSettings *)settings {
-    if ([self.originalDelegate respondsToSelector:_cmd]) [self.originalDelegate captureOutput:output willBeginCaptureForResolvedSettings:settings];
+@implementation VCamUniversalProxy
+- (instancetype)initWithDelegate:(id)delegate {
+    _originalDelegate = delegate;
+    return self;
 }
-- (void)captureOutput:(AVCapturePhotoOutput *)output willCapturePhotoForResolvedSettings:(AVCaptureResolvedPhotoSettings *)settings {
-    if ([self.originalDelegate respondsToSelector:_cmd]) [self.originalDelegate captureOutput:output willCapturePhotoForResolvedSettings:settings];
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)sel {
+    return [self.originalDelegate methodSignatureForSelector:sel];
 }
-- (void)captureOutput:(AVCapturePhotoOutput *)output didCapturePhotoForResolvedSettings:(AVCaptureResolvedPhotoSettings *)settings {
-    if ([self.originalDelegate respondsToSelector:_cmd]) [self.originalDelegate captureOutput:output didCapturePhotoForResolvedSettings:settings];
+- (void)forwardInvocation:(NSInvocation *)invocation {
+    [invocation invokeWithTarget:self.originalDelegate];
+}
+- (BOOL)respondsToSelector:(SEL)sel {
+    return [self.originalDelegate respondsToSelector:sel];
 }
 - (void)captureOutput:(AVCapturePhotoOutput *)output didFinishProcessingPhoto:(AVCapturePhoto *)photo error:(NSError *)error {
-    if ([self.originalDelegate respondsToSelector:_cmd]) [self.originalDelegate captureOutput:output didFinishProcessingPhoto:photo error:error];
-}
-- (void)captureOutput:(AVCapturePhotoOutput *)output didFinishCaptureForResolvedSettings:(AVCaptureResolvedPhotoSettings *)settings error:(NSError *)error {
-    if ([self.originalDelegate respondsToSelector:_cmd]) [self.originalDelegate captureOutput:output didFinishCaptureForResolvedSettings:settings error:error];
+    if ([self.originalDelegate respondsToSelector:_cmd]) {
+        [self.originalDelegate captureOutput:output didFinishProcessingPhoto:photo error:error];
+    }
 }
 @end
 
 %hook AVCapturePhotoOutput
 - (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
-    if (enabled && delegate && ![delegate isKindOfClass:[VCamFinalProxy class]]) {
-        VCamFinalProxy *proxy = [[VCamFinalProxy alloc] init];
-        proxy.originalDelegate = delegate;
-        %orig(settings, proxy);
+    if (enabled && delegate) {
+        VCamUniversalProxy *proxy = [[VCamUniversalProxy alloc] initWithDelegate:delegate];
+        %orig(settings, (id<AVCapturePhotoCaptureDelegate>)proxy);
         return;
     }
     %orig;
@@ -67,7 +69,7 @@ static void RefreshBuffer() {
     RefreshBuffer();
     if (enabled && gGlobalBuffer) {
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
-        return UIImageJPEGRepresentation([UIImage imageWithCIImage:ci], 0.95);
+        return UIImageJPEGRepresentation([UIImage imageWithCIImage:ci], 0.9);
     }
     return %orig;
 }
