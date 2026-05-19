@@ -5,24 +5,13 @@
 
 static BOOL enabled = YES;
 static NSString *streamURL = @"http://192.168.1.44:8888/live/stream/index.m3u8";
-
 static AVPlayer *gPlayer = nil;
 static AVPlayerItemVideoOutput *gVideoOutput = nil;
 static CVPixelBufferRef gGlobalBuffer = NULL;
 static CIContext *gCIContext = nil;
 
-static void loadPrefs() {
-    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
-    if (prefs) {
-        enabled = prefs[@"enabled"] ? [prefs[@"enabled"] boolValue] : YES;
-        NSString *url = prefs[@"rtspURL"];
-        if (url && url.length > 0) streamURL = url;
-    }
-    if (!gCIContext) gCIContext = [CIContext contextWithOptions:nil];
-}
-
 static void RefreshBuffer() {
-    if (!gVideoOutput || !enabled) return;
+    if (!gVideoOutput || !enabled || !gPlayer) return;
     CMTime vTime = [gPlayer.currentItem currentTime];
     if ([gVideoOutput hasNewPixelBufferForItemTime:vTime]) {
         CVPixelBufferRef pb = [gVideoOutput copyPixelBufferForItemTime:vTime itemTimeForDisplay:NULL];
@@ -34,61 +23,21 @@ static void RefreshBuffer() {
     }
 }
 
-// Улучшенный прокси для делегата фото
-@interface VCamPhotoDelegateProxy : NSObject <AVCapturePhotoCaptureDelegate>
-@property (nonatomic, strong) id originalDelegate;
-@end
-
-@implementation VCamPhotoDelegateProxy
-- (BOOL)respondsToSelector:(SEL)aSelector {
-    return [self.originalDelegate respondsToSelector:aSelector];
-}
-- (id)forwardingTargetForSelector:(SEL)aSelector {
-    return self.originalDelegate;
-}
-- (void)captureOutput:(AVCapturePhotoOutput *)output didFinishProcessingPhoto:(AVCapturePhoto *)photo error:(NSError *)error {
-    if ([self.originalDelegate respondsToSelector:@selector(captureOutput:didFinishProcessingPhoto:error:)]) {
-        [self.originalDelegate captureOutput:output didFinishProcessingPhoto:photo error:error];
-    }
-}
-@end
-
-%hook AVCapturePhotoOutput
-- (void)capturePhotoWithSettings:(AVCapturePhotoSettings *)settings delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
-    if (enabled && delegate) {
-        VCamPhotoDelegateProxy *proxy = [[VCamPhotoDelegateProxy alloc] init];
-        proxy.originalDelegate = delegate;
-        objc_setAssociatedObject(self, @selector(capturePhotoWithSettings:delegate:), proxy, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        %orig(settings, proxy);
-        return;
-    }
-    %orig;
-}
-%end
-
 %hook AVCapturePhoto
 - (CVPixelBufferRef)pixelBuffer {
+    RefreshBuffer();
     if (enabled && gGlobalBuffer) return CVPixelBufferRetain(gGlobalBuffer);
-    return %orig;
-}
-- (CVPixelBufferRef)previewPixelBuffer {
-    if (enabled && gGlobalBuffer) return CVPixelBufferRetain(gGlobalBuffer);
-    return %orig;
-}
-- (CGImageRef)CGImageRepresentation {
-    if (enabled && gGlobalBuffer) {
-        CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
-        return [gCIContext createCGImage:ci fromRect:ci.extent];
-    }
     return %orig;
 }
 - (NSData *)fileDataRepresentation {
+    RefreshBuffer();
     if (enabled && gGlobalBuffer) {
+        if (!gCIContext) gCIContext = [CIContext contextWithOptions:nil];
         CIImage *ci = [CIImage imageWithCVPixelBuffer:gGlobalBuffer];
         CGImageRef cg = [gCIContext createCGImage:ci fromRect:ci.extent];
         if (cg) {
             UIImage *ui = [UIImage imageWithCGImage:cg];
-            NSData *data = UIImageJPEGRepresentation(ui, 0.9);
+            NSData *data = UIImageJPEGRepresentation(ui, 0.8);
             CGImageRelease(cg);
             return data;
         }
@@ -97,19 +46,19 @@ static void RefreshBuffer() {
 }
 %end
 
-@interface VCamVideoDataProxy : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
-@property (nonatomic, strong) id originalDelegate;
+@interface VCamVideoProxy : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
+@property (nonatomic, assign) id originalDelegate;
 @end
 
-@implementation VCamVideoDataProxy
+@implementation VCamVideoProxy
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
     if (enabled && gGlobalBuffer) {
         CMSampleBufferRef newSbuf = NULL;
         CMFormatDescriptionRef formatDesc = NULL;
         CMVideoFormatDescriptionCreateForImageBuffer(NULL, gGlobalBuffer, (CMVideoFormatDescriptionRef *)&formatDesc);
-        CMSampleTimingInfo timingInfo;
-        CMSampleBufferGetSampleTimingInfo(sampleBuffer, 0, &timingInfo);
-        CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, gGlobalBuffer, YES, NULL, NULL, (CMVideoFormatDescriptionRef)formatDesc, &timingInfo, &newSbuf);
+        CMSampleTimingInfo timing;
+        CMSampleBufferGetSampleTimingInfo(sampleBuffer, 0, &timing);
+        CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, gGlobalBuffer, YES, NULL, NULL, (CMVideoFormatDescriptionRef)formatDesc, &timing, &newSbuf);
         if (newSbuf) {
             if ([self.originalDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
                 [self.originalDelegate captureOutput:output didOutputSampleBuffer:newSbuf fromConnection:connection];
@@ -127,8 +76,8 @@ static void RefreshBuffer() {
 
 %hook AVCaptureVideoDataOutput
 - (void)setSampleBufferDelegate:(id)delegate queue:(dispatch_queue_t)callbackQueue {
-    if (enabled && delegate) {
-        VCamVideoDataProxy *proxy = [[VCamVideoDataProxy alloc] init];
+    if (enabled && delegate && ![delegate isKindOfClass:[VCamVideoProxy class]]) {
+        VCamVideoProxy *proxy = [[VCamVideoProxy alloc] init];
         proxy.originalDelegate = delegate;
         objc_setAssociatedObject(self, @selector(setSampleBufferDelegate:queue:), proxy, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         %orig(proxy, callbackQueue);
@@ -144,7 +93,12 @@ static void RefreshBuffer() {
     if (!enabled) return;
     self.hidden = YES;
     if (!gPlayer) {
-        loadPrefs();
+        NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/com.murkaska.virtualcampro.plist"];
+        if (prefs) {
+            enabled = [prefs[@"enabled"] boolValue];
+            NSString *url = prefs[@"rtspURL"];
+            if (url) streamURL = url;
+        }
         gPlayer = [[AVPlayer alloc] initWithURL:[NSURL URLWithString:streamURL]];
         gVideoOutput = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:@{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)}];
         [gPlayer.currentItem addOutput:gVideoOutput];
@@ -159,7 +113,5 @@ static void RefreshBuffer() {
 %end
 
 %ctor {
-    loadPrefs();
-    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)loadPrefs, CFSTR("com.murkaska.virtualcampro/settingschanged"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     %init;
 }
